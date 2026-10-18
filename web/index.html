@@ -474,7 +474,8 @@
 
       document.getElementById('badgeSagaStatus').innerText = 'ROLLED_BACK';
       document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.ROLLED_BACK}`;
-      logEvent('=== SAGA ROLLED_BACK: All prior states safely unwound. Zero stranded capital. ===', 'comp');
+      logEvent('=== SAGA ROLLED_BACK: Simulated compensation completed in reverse order; no real assets or on-chain state were changed. ===', 'comp');
+      logEvent('Note: Real on-chain compensation consumes gas, may incur AMM slippage, and cannot erase prior transactions.', 'warn');
     }
   </script>
 </body>

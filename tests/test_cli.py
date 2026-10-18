@@ -24,6 +24,7 @@ def test_cli_demo_stdout(capsys):
     assert "Scenario B: Forced Step 3 Failure" in captured.out
     assert "Status: COMPLETED" in captured.out
     assert "Status: ROLLED_BACK" in captured.out
+    assert "Simulated compensation completed in reverse order" in captured.out
 
 
 def test_cli_demo_json(capsys):

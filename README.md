@@ -169,8 +169,16 @@ When a permanent failure or unrecoverable error occurs, the coordinator halts fo
 | **Step 3 (Deposit)** | Step 1, Step 2 | 1. **Unwind Step 2**: Trade output tokens (`WPHRS`) back to input tokens (`USDC`).<br>2. **Unwind Step 1**: Reset ERC20 allowance on spender to 0. | `ROLLED_BACK` |
 | **Step 2 (Swap)** | Step 1 | 1. **Unwind Step 1**: Reset ERC20 allowance on spender to 0. | `ROLLED_BACK` |
 | **Step 1 (Approve)** | None | No prior actions to unwind. Pipeline safely halted. | `ROLLED_BACK` |
+| **Compensation Failure** | Any | Cascade halts immediately; emergency snapshot dumped. | `MANUAL_RECOVERY_REQUIRED` |
 
-This guarantees that token approvals are never left lingering open and intermediate swapped assets are returned to the user's primary holding asset.
+This mechanism ensures that simulated approvals are revoked and simulated swaps are unwound in reverse order.
+
+> [!IMPORTANT]
+> **Real-World On-Chain Limitations**:
+> In a live blockchain environment, compensation is not equivalent to database rollback:
+> 1. **Prior transactions cannot be erased**: Prior state changes remain immutably recorded in the block history.
+> 2. **Economic divergence**: Unwinding a swap through an AMM consumes gas fees and may incur price slippage and liquidity pool fees; thus, the returned balance may not match the exact initial economic state.
+> 3. **Compensation can fail**: A compensating transaction can itself revert (e.g. if a pool is paused, drained, or gas spikes). In such cases, the engine halts cascading executions and flags `MANUAL_RECOVERY_REQUIRED`.
 
 ---
 
@@ -330,7 +338,8 @@ Total Gas Consumed (Simulated): 295,000
    1. Step 3 (Deposit) permanently reverted.
    2. Step 2 (Swap) compensated: Executed UNWIND_SWAP (WPHRS -> USDC).
    3. Step 1 (Approve) compensated: Executed ERC20_REVOKE_APPROVAL (Allowance -> 0).
->> Result: Pipeline safely restored to initial state. Zero stranded capital.
+>> Result: Simulated compensation completed in reverse order; no real assets or on-chain state were changed.
+>> Note: In production on-chain execution, compensating transactions cannot erase prior history, consume gas, and may incur AMM slippage or require MANUAL_RECOVERY_REQUIRED if rollback reverts.
 ```
 
 ---

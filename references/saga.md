@@ -9,7 +9,7 @@
 
 ## 1. Overview
 
-The `pharos-saga-executor` coordinates multi-step dependent on-chain transaction sequences on Pharos Network. It prevents partial execution state and stranded capital by enforcing:
+The `pharos-saga-executor` coordinates multi-step dependent on-chain transaction sequences on Pharos Network. It mitigates partial execution risk and unattended stranded capital by enforcing:
 1. **Pre-flight dependency verification**: Ensuring prior steps succeeded with confirmed on-chain receipts before dispatching child steps.
 2. **Bounded exponential backoff retries**: Handling transient RPC errors, network drops, and gas spikes with random jitter.
 3. **Strict LIFO compensation rollbacks**: Unwinding completed steps in exact reverse order when a permanent failure occurs.

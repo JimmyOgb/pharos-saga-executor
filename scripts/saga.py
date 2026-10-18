@@ -158,12 +158,12 @@ def cmd_demo(args: argparse.Namespace) -> int:
     if not args.json:
         print(f"\n[SCENARIO B RESULT] Status: {log_b.status.value}")
         print(f"Total Gas Consumed (Simulated): {log_b.total_gas_used:,}")
-        print(format_step_table(log_b))
         print(">> Rollback Verification (LIFO Order):")
         print("   1. Step 3 (Deposit) permanently reverted.")
         print("   2. Step 2 (Swap) compensated: Executed UNWIND_SWAP (WPHRS -> USDC).")
         print("   3. Step 1 (Approve) compensated: Executed ERC20_REVOKE_APPROVAL (Allowance -> 0).")
-        print(">> Result: Pipeline safely restored to initial state. Zero stranded capital.\n")
+        print(">> Result: Simulated compensation completed in reverse order; no real assets or on-chain state were changed.")
+        print(">> Note: In production on-chain execution, compensating transactions cannot erase prior history, consume gas, and may incur AMM slippage or require MANUAL_RECOVERY_REQUIRED if rollback reverts.\n")
 
     if args.json:
         print(json.dumps({
