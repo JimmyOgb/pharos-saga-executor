@@ -217,7 +217,7 @@ The frontend is a **zero-mock, real on-chain transaction coordinator** running i
 - **Preflight Gas Reserve Barriers**:
   - *Wrap Action*: Asserts that `phrsBalance >= amount + 0.0005 PHRS` before prompting wallet.
   - *Unwrap Action*: Conducts fresh reads of WPHRS and native PHRS balances via direct RPC, enforcing a minimum reserve of `0.0003 PHRS` for transaction gas (disclosed to the user as a preflight estimate, not a guarantee of sufficient gas).
-- **Segregated Permit2 Experiment**: An optional collapsible panel allows experimenting with `approve()` / `revoke()` on the canonical Uniswap Permit2 contract (`0x000000000022D473030F116dDEE9F6B43aC78BA3`), with explicit disclosure that no public AMM router or vault is deployed on Atlantic Testnet.
+- **Zero-Approval Non-Custodial Architecture**: The frontend eliminates arbitrary token approval steps entirely. It operates strictly via native wrapping (`deposit()`) and unwrapping (`withdraw(uint256)`), requesting zero ERC-20 allowances from user wallets.
 - **Direct Explorer Links**: Every mined transaction includes a clickable direct link to `https://atlantic.pharosscan.xyz/tx/<hash>`.
 
 ---

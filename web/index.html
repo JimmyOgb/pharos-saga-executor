@@ -407,42 +407,6 @@
 
       </div>
 
-      <!-- Optional Experiment (Collapsible / Clearly Separated) -->
-      <section class="glass-card rounded-2xl p-5 border border-slate-800/80 text-xs space-y-3">
-        <details class="group">
-          <summary class="font-mono text-xs font-semibold text-slate-400 cursor-pointer flex items-center justify-between select-none hover:text-slate-200">
-            <span class="flex items-center gap-2">
-              <span>🔬</span> Optional Experiment: Standalone Allowance Staging (Permit2)
-            </span>
-            <span class="text-slate-500 group-open:rotate-180 transition-transform">▼</span>
-          </summary>
-          <div class="pt-4 mt-3 border-t border-slate-800/80 space-y-3 text-slate-400 leading-relaxed">
-            <div class="p-3 rounded-xl bg-amber-950/40 border border-amber-800/40 text-amber-200 text-xs">
-              <strong>Transparent Architecture Disclosure:</strong>
-              Atlantic Testnet currently does not have a public Uniswap Universal Router or AMM pool deployed. 
-              The controls below allow observing isolated ERC-20 approval (<code class="font-mono">approve(Permit2, amount)</code>) and revocation (<code class="font-mono">approve(Permit2, 0)</code>) state changes directly on the WPHRS contract, but they do <em>not</em> perform any downstream swap or vault deposit.
-            </div>
-
-            <div class="flex flex-wrap items-center gap-3 pt-2">
-              <div class="text-xs font-mono text-slate-300">
-                Spender: <span class="text-cyan-300">Permit2 (0x000000000022D473030F116dDEE9F6B43aC78BA3)</span>
-              </div>
-              <div class="text-xs font-mono text-slate-300 ml-auto">
-                Current Allowance: <span id="expAllowanceDisplay" class="text-purple-300 font-bold">-- WPHRS</span>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-3 pt-2">
-              <button onclick="executeExperimentApprove()" class="px-3.5 py-2 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
-                Approve Bounded Allowance (0.0001 WPHRS)
-              </button>
-              <button onclick="executeExperimentRevoke()" class="px-3.5 py-2 rounded-xl text-xs font-medium bg-slate-900 hover:bg-slate-800 text-rose-300 border border-slate-800 transition">
-                Revoke Allowance (approve 0)
-              </button>
-            </div>
-          </div>
-        </details>
-      </section>
 
       <!-- Safety & Non-Custodial Policy Section -->
       <section id="safetySection" class="glass-card rounded-2xl p-5 border border-slate-800 text-xs space-y-2">
@@ -473,11 +437,12 @@
     const ATLANTIC_CHAIN_ID_INT = 688689;
     const ATLANTIC_RPC = 'https://atlantic.dplabs-internal.com';
     const WPHRS_ADDRESS = '0x838800b758277CC111B2d48Ab01e5E164f8E9471';
-    const PERMIT2_SPENDER = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
     let currentAccount = null;
     let eventCount = 0;
     let isExecuting = false;
+    let isConnecting = false;
+    let refreshGeneration = 0;
     let cachedWphrsBalance = 0n;
 
     function padAddress(addr) {
@@ -580,12 +545,14 @@
 
     // Wallet Connection & Chain Enforcement
     async function connectWallet() {
+      if (isConnecting) return;
       if (!window.ethereum) {
         alert('No browser wallet detected. Please install MetaMask, Rabby, or a compatible Web3 wallet.');
         logEvent('Browser wallet not found. window.ethereum is undefined.', 'error');
         return;
       }
 
+      isConnecting = true;
       try {
         logEvent('Connecting to browser wallet via window.ethereum...', 'info');
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
@@ -628,10 +595,12 @@
         }
 
         logEvent(`Connected to account ${currentAccount} on Pharos Atlantic Testnet.`, 'success');
-        await refreshLiveBalances();
+        await refreshLiveBalances(currentAccount);
 
       } catch (err) {
         logEvent(`Wallet connection failed: ${err.message}`, 'error');
+      } finally {
+        isConnecting = false;
       }
     }
 
@@ -643,43 +612,89 @@
       document.getElementById('metricPhrsBalance').innerText = '-- PHRS';
       document.getElementById('metricWphrsBalance').innerText = '-- WPHRS';
       document.getElementById('metricGasConsumed').innerText = '0';
-      document.getElementById('expAllowanceDisplay').innerText = '-- WPHRS';
       logEvent('Wallet disconnected from UI.', 'info');
     }
 
-    // Refresh On-Chain State from Real RPC
-    async function refreshLiveBalances() {
-      try {
-        const block = await rpcCall('eth_blockNumber');
-        const blockNum = parseInt(block, 16);
+    // Refresh On-Chain State from Real RPC (Concurrent & Resilient with Promise.allSettled)
+    async function refreshLiveBalances(explicitAccount = null) {
+      const targetAccount = explicitAccount !== null ? explicitAccount : currentAccount;
+      const thisGen = ++refreshGeneration;
+
+      if (targetAccount) {
+        if (document.getElementById('metricPhrsBalance').innerText.includes('--')) {
+          document.getElementById('metricPhrsBalance').innerText = 'Loading...';
+        }
+        if (document.getElementById('metricWphrsBalance').innerText.includes('--')) {
+          document.getElementById('metricWphrsBalance').innerText = 'Loading...';
+        }
+      }
+
+      // Build independent concurrent queries
+      const queries = [
+        rpcCall('eth_blockNumber'),
+        rpcCall('eth_gasPrice')
+      ];
+
+      if (targetAccount) {
+        queries.push(rpcCall('eth_getBalance', [targetAccount, 'latest']));
+        const balData = '0x70a08231' + padAddress(targetAccount);
+        queries.push(rpcCall('eth_call', [{ to: WPHRS_ADDRESS, data: balData }, 'latest']));
+      }
+
+      const results = await Promise.allSettled(queries);
+
+      // Race-safety: If another refresh was triggered or active account changed mid-request, ignore stale result
+      if (thisGen !== refreshGeneration) {
+        return;
+      }
+
+      // 1. Process eth_blockNumber
+      const blockRes = results[0];
+      if (blockRes.status === 'fulfilled') {
+        const blockNum = parseInt(blockRes.value, 16);
         document.getElementById('rpcBlockHeight').innerText = `#${blockNum.toLocaleString()}`;
+      } else {
+        document.getElementById('rpcBlockHeight').innerText = 'Unavailable';
+      }
 
-        const gasPriceHex = await rpcCall('eth_gasPrice');
-        const gasGwei = (parseInt(gasPriceHex, 16) / 1e9).toFixed(2);
+      // 2. Process eth_gasPrice
+      const gasRes = results[1];
+      if (gasRes.status === 'fulfilled') {
+        const gasGwei = (parseInt(gasRes.value, 16) / 1e9).toFixed(2);
         document.getElementById('rpcGasPrice').innerText = `${gasGwei} Gwei`;
+      } else {
+        document.getElementById('rpcGasPrice').innerText = 'Unavailable';
+      }
 
-        if (!currentAccount) return;
+      // 3. Process Account Balances independently
+      if (targetAccount && results.length >= 4) {
+        const phrsRes = results[2];
+        const wphrsRes = results[3];
 
-        // 1. Native PHRS Balance
-        const phrsHex = await rpcCall('eth_getBalance', [currentAccount, 'latest']);
-        const phrsVal = BigInt(phrsHex || '0x0');
-        document.getElementById('metricPhrsBalance').innerText = `${formatEther(phrsVal)} PHRS`;
+        let phrsText = '--';
+        let wphrsText = '--';
 
-        // 2. WPHRS Token Balance: balanceOf(currentAccount) -> 0x70a08231
-        const balData = '0x70a08231' + padAddress(currentAccount);
-        const wphrsHex = await rpcCall('eth_call', [{ to: WPHRS_ADDRESS, data: balData }, 'latest']);
-        cachedWphrsBalance = BigInt(wphrsHex || '0x0');
-        document.getElementById('metricWphrsBalance').innerText = `${formatEther(cachedWphrsBalance)} WPHRS`;
+        if (phrsRes.status === 'fulfilled') {
+          const phrsVal = BigInt(phrsRes.value || '0x0');
+          phrsText = formatEther(phrsVal);
+          document.getElementById('metricPhrsBalance').innerText = `${phrsText} PHRS`;
+        } else {
+          document.getElementById('metricPhrsBalance').innerText = 'Unavailable';
+          logEvent(`Failed to read native PHRS balance: ${phrsRes.reason ? phrsRes.reason.message : 'RPC error'}`, 'warn');
+        }
 
-        // 3. WPHRS Allowance for Permit2: allowance(currentAccount, PERMIT2_SPENDER) -> 0xdd62ed3e
-        const allowData = '0xdd62ed3e' + padAddress(currentAccount) + padAddress(PERMIT2_SPENDER);
-        const allowHex = await rpcCall('eth_call', [{ to: WPHRS_ADDRESS, data: allowData }, 'latest']);
-        const allowVal = BigInt(allowHex || '0x0');
-        document.getElementById('expAllowanceDisplay').innerText = `${formatEther(allowVal)} WPHRS`;
+        if (wphrsRes.status === 'fulfilled') {
+          cachedWphrsBalance = BigInt(wphrsRes.value || '0x0');
+          wphrsText = formatEther(cachedWphrsBalance);
+          document.getElementById('metricWphrsBalance').innerText = `${wphrsText} WPHRS`;
+        } else {
+          document.getElementById('metricWphrsBalance').innerText = 'Unavailable';
+          logEvent(`Failed to read WPHRS balance: ${wphrsRes.reason ? wphrsRes.reason.message : 'RPC error'}`, 'warn');
+        }
 
-        logEvent(`Live balances: Native ${formatEther(phrsVal)} PHRS | WPHRS ${formatEther(cachedWphrsBalance)}`, 'info');
-      } catch (err) {
-        logEvent(`Error fetching on-chain balances: ${err.message}`, 'error');
+        if (phrsRes.status === 'fulfilled' && wphrsRes.status === 'fulfilled') {
+          logEvent(`Live balances: Native ${phrsText} PHRS | WPHRS ${wphrsText}`, 'info');
+        }
       }
     }
 
@@ -876,60 +891,23 @@
       }
     }
 
-    // Optional Experiment Functions (Strictly Isolated)
-    async function executeExperimentApprove() {
-      try {
-        await validateChainAndWallet();
-        logEvent(`Experiment: Requesting wallet signature to approve 0.0001 WPHRS for Permit2...`, 'info');
-        const wadHex = toWeiHex('0.0001');
-        const callData = '0x095ea7b3' + padAddress(PERMIT2_SPENDER) + padUint256(wadHex);
-        const txHash = await window.ethereum.request({
-          method: 'eth_sendTransaction',
-          params: [{ from: currentAccount, to: WPHRS_ADDRESS, data: callData }]
-        });
-        logEvent(`Experiment approve broadcast: ${txHash}`, 'info');
-        await pollReceipt(txHash);
-        logEvent('Experiment approve confirmed on-chain.', 'success');
-        await refreshLiveBalances();
-      } catch (err) {
-        logEvent(`Experiment approve failed: ${err.message}`, 'error');
-      }
-    }
-
-    async function executeExperimentRevoke() {
-      try {
-        await validateChainAndWallet();
-        const allowData = '0xdd62ed3e' + padAddress(currentAccount) + padAddress(PERMIT2_SPENDER);
-        const allowHex = await rpcCall('eth_call', [{ to: WPHRS_ADDRESS, data: allowData }, 'latest']);
-        if (BigInt(allowHex || '0x0') === 0n) {
-          logEvent('Allowance is already 0 WPHRS. Zero on-chain transaction needed.', 'info');
-          return;
-        }
-        logEvent(`Experiment: Revoking Permit2 allowance (approve 0)...`, 'info');
-        const callData = '0x095ea7b3' + padAddress(PERMIT2_SPENDER) + padUint256('0x0');
-        const txHash = await window.ethereum.request({
-          method: 'eth_sendTransaction',
-          params: [{ from: currentAccount, to: WPHRS_ADDRESS, data: callData }]
-        });
-        logEvent(`Experiment revoke broadcast: ${txHash}`, 'info');
-        await pollReceipt(txHash);
-        logEvent('Allowance revoked on-chain to 0.', 'success');
-        await refreshLiveBalances();
-      } catch (err) {
-        logEvent(`Experiment revoke failed: ${err.message}`, 'error');
-      }
-    }
-
     // Initialize Page
     window.addEventListener('DOMContentLoaded', () => {
       refreshLiveBalances();
       if (window.ethereum) {
         window.ethereum.on('accountsChanged', (accounts) => {
+          if (isConnecting) return; // Prevent duplicate refresh already handled by connectWallet()
           if (accounts.length > 0) {
-            currentAccount = accounts[0];
+            const nextAccount = accounts[0];
+            if (currentAccount && currentAccount.toLowerCase() === nextAccount.toLowerCase()) {
+              return; // Same account, ignore redundant event
+            }
+            currentAccount = nextAccount;
+            document.getElementById('walletInfoBox').classList.remove('hidden');
+            document.getElementById('btnConnectWallet').classList.add('hidden');
             document.getElementById('walletAddressDisplay').innerText = `${currentAccount.substring(0, 6)}...${currentAccount.substring(38)}`;
             document.getElementById('inspWallet').innerText = currentAccount;
-            refreshLiveBalances();
+            refreshLiveBalances(currentAccount);
           } else {
             disconnectWallet();
           }

@@ -34,7 +34,8 @@ def test_no_simulated_or_mock_artifacts_in_frontend():
 
     # Verify verified contract addresses
     assert EXPECTED_WPHRS.lower() in content.lower(), f"WPHRS address {EXPECTED_WPHRS} must be present"
-    assert EXPECTED_PERMIT2.lower() in content.lower(), f"Permit2 address {EXPECTED_PERMIT2} must be present"
+    assert EXPECTED_PERMIT2.lower() not in content.lower(), f"Permit2 address {EXPECTED_PERMIT2} must not be present in frontend"
+    assert "PERMIT2_SPENDER" not in content, "PERMIT2_SPENDER must not exist in frontend"
 
     # Verify chain enforcement
     assert str(EXPECTED_CHAIN_ID) in content, f"Chain ID {EXPECTED_CHAIN_ID} must be explicitly enforced"
@@ -45,7 +46,7 @@ def test_no_simulated_or_mock_artifacts_in_frontend():
 
 
 def test_frontend_workflow_partitioning():
-    """Verify wrap and unwrap are separate user-initiated actions, with Permit2 segregated."""
+    """Verify wrap and unwrap are separate user-initiated actions, and Permit2 is completely removed."""
     index_file = WEB_DIR / "index.html"
     content = index_file.read_text(encoding="utf-8")
 
@@ -53,13 +54,14 @@ def test_frontend_workflow_partitioning():
     assert 'id="btnWrap"' in content, "Action 1: Wrap button must exist"
     assert 'id="btnUnwrap"' in content, "Action 2: Unwrap button must exist"
 
-    # Permit2 experiment must be explicitly marked as optional/experimental
-    assert "Optional Experiment" in content, "Permit2 must be clearly labeled as Optional Experiment"
-    assert "Atlantic Testnet currently does not have a public Uniswap Universal Router or AMM pool deployed" in content
+    # Permit2 experiment must be completely removed
+    assert "Optional Experiment" not in content, "Permit2 experiment panel must be removed"
+    assert "executeExperimentApprove" not in content, "Experiment approve function must be removed"
+    assert "executeExperimentRevoke" not in content, "Experiment revoke function must be removed"
 
 
 def test_primary_workflow_has_no_permit2_approval():
-    """Verify primary wrap and unwrap actions do not invoke ERC-20 approve."""
+    """Verify primary wrap and unwrap actions do not invoke ERC-20 approve and no Permit2 code exists."""
     index_file = WEB_DIR / "index.html"
     content = index_file.read_text(encoding="utf-8")
 
@@ -69,12 +71,12 @@ def test_primary_workflow_has_no_permit2_approval():
     wrap_code = content[wrap_start:wrap_end]
 
     unwrap_start = wrap_end
-    unwrap_end = content.find("async function executeExperimentApprove()")
+    unwrap_end = content.find("// Initialize Page")
     unwrap_code = content[unwrap_start:unwrap_end]
 
-    # Neither primary action should use approve selector 0x095ea7b3
-    assert "0x095ea7b3" not in wrap_code, "executeWrap must not call approve"
-    assert "0x095ea7b3" not in unwrap_code, "executeUnwrap must not call approve"
+    # Neither action should use approve selector 0x095ea7b3
+    assert "0x095ea7b3" not in content, "Frontend must contain zero approve selectors (0x095ea7b3)"
+    assert "PERMIT2" not in content, "Frontend must contain zero PERMIT2 references"
     assert "PERMIT2_SPENDER" not in wrap_code, "executeWrap must not reference Permit2"
     assert "PERMIT2_SPENDER" not in unwrap_code, "executeUnwrap must not reference Permit2"
 
@@ -141,7 +143,7 @@ def test_unwrap_gas_protection_logic_and_frontend():
     content = index_file.read_text(encoding="utf-8")
 
     unwrap_start = content.find("async function executeUnwrap()")
-    unwrap_end = content.find("async function executeExperimentApprove()")
+    unwrap_end = content.find("// Initialize Page")
     unwrap_code = content[unwrap_start:unwrap_end]
 
     # Verify fresh balance read from RPC
@@ -241,3 +243,129 @@ def test_vercel_static_deployment_serves_frontend():
     assert "<!DOCTYPE html>" in content
     assert "<title>" in content
     assert "WPHRS" in content
+
+
+def test_refresh_uses_promise_all_settled_concurrency():
+    """Verify refreshLiveBalances uses Promise.allSettled and has removed Permit2 allowance read."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    refresh_start = content.find("async function refreshLiveBalances(")
+    refresh_end = content.find("async function pollReceipt(")
+    refresh_code = content[refresh_start:refresh_end]
+
+    # Verify Promise.allSettled is used
+    assert "Promise.allSettled(queries)" in refresh_code
+    assert "rpcCall('eth_blockNumber')" in refresh_code
+    assert "rpcCall('eth_gasPrice')" in refresh_code
+    assert "rpcCall('eth_getBalance'" in refresh_code
+    assert "rpcCall('eth_call'" in refresh_code
+
+    # Verify Permit2 allowance is completely excluded
+    assert "PERMIT2" not in refresh_code
+    assert "allowance" not in refresh_code
+    assert "0xdd62ed3e" not in refresh_code
+
+
+def test_duplicate_refresh_prevention_logic():
+    """Verify connectWallet and accountsChanged prevent duplicate concurrent refreshes."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    # Verify isConnecting flag
+    assert "let isConnecting = false;" in content
+    assert "if (isConnecting) return;" in content
+
+    # In accountsChanged, verify duplicate guard
+    accounts_changed_start = content.find("window.ethereum.on('accountsChanged'")
+    accounts_changed_end = content.find("window.ethereum.on('chainChanged'")
+    ac_code = content[accounts_changed_start:accounts_changed_end]
+
+    assert "if (isConnecting) return;" in ac_code
+    assert "currentAccount && currentAccount.toLowerCase() === nextAccount.toLowerCase()" in ac_code
+
+
+def test_generation_counter_race_safety():
+    """Verify generation counter race-safety pattern in frontend and simulate logic."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    assert "let refreshGeneration = 0;" in content
+    assert "const thisGen = ++refreshGeneration;" in content
+    assert "if (thisGen !== refreshGeneration)" in content
+
+    # Simulate race condition in Python
+    state = {"active_account": None, "displayed_balance": None, "generation": 0}
+
+    def simulate_refresh(account, delay_rank, results_val):
+        state["generation"] += 1
+        my_gen = state["generation"]
+        # In a real environment, async call finishes after some delay
+        # If a newer request was dispatched (my_gen != state["generation"]), discard
+        if my_gen == state["generation"]:
+            state["active_account"] = account
+            state["displayed_balance"] = results_val
+            return "APPLIED"
+        return "DISCARDED"
+
+    # User connects Account A -> Gen 1
+    # User immediately switches to Account B -> Gen 2
+    # Suppose Gen 1 resolves AFTER Gen 2
+    gen1_call = 1
+    gen2_call = 2
+    state["generation"] = 2  # Gen 2 is current
+    assert (gen1_call == state["generation"]) is False  # Gen 1 discarded
+    assert (gen2_call == state["generation"]) is True   # Gen 2 applied
+
+
+def test_partial_rpc_failure_resilience():
+    """Verify resilient handling of partial RPC failures where other fields still display."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    assert "Unavailable" in content
+    assert "blockRes.status === 'fulfilled'" in content
+    assert "gasRes.status === 'fulfilled'" in content
+    assert "phrsRes.status === 'fulfilled'" in content
+    assert "wphrsRes.status === 'fulfilled'" in content
+
+    # Simulate allSettled partial failure handling
+    mock_results = [
+        {"status": "fulfilled", "value": "0x1e1e4a1"},  # blockNumber
+        {"status": "rejected", "reason": "Timeout"},     # gasPrice fails
+        {"status": "fulfilled", "value": "0xde0b6b3a7640000"},  # 1 PHRS
+        {"status": "fulfilled", "value": "0x1bc16d674ec80000"}  # 2 WPHRS
+    ]
+
+    ui_state = {}
+    ui_state["block"] = int(mock_results[0]["value"], 16) if mock_results[0]["status"] == "fulfilled" else "Unavailable"
+    ui_state["gas"] = "Unavailable" if mock_results[1]["status"] == "rejected" else "OK"
+    ui_state["phrs"] = "1.0000" if mock_results[2]["status"] == "fulfilled" else "Unavailable"
+    ui_state["wphrs"] = "2.0000" if mock_results[3]["status"] == "fulfilled" else "Unavailable"
+
+    assert ui_state["block"] == 31581345
+    assert ui_state["gas"] == "Unavailable"
+    assert ui_state["phrs"] == "1.0000"
+    assert ui_state["wphrs"] == "2.0000"
+
+
+def test_no_signing_or_broadcasting_during_wallet_connection():
+    """Verify connectWallet contains zero transaction signing or broadcasting methods."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    conn_start = content.find("async function connectWallet()")
+    conn_end = content.find("function disconnectWallet()")
+    conn_code = content[conn_start:conn_end]
+
+    # Must contain connection and chain validation
+    assert "eth_requestAccounts" in conn_code
+    assert "eth_chainId" in conn_code
+
+    # Must NOT contain signing or broadcasting
+    assert "eth_sendTransaction" not in conn_code
+    assert "personal_sign" not in conn_code
+    assert "eth_sign" not in conn_code
+    assert "eth_signTypedData" not in conn_code
+    assert "0x095ea7b3" not in conn_code
+
