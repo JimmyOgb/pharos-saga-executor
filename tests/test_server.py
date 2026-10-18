@@ -68,3 +68,72 @@ def test_server_post_api_run_forced_failure():
     log = json.loads(handler.wfile.getvalue().decode("utf-8"))
     assert log["status"] == "ROLLED_BACK"
     assert log["steps_compensated"] == 2
+
+
+def test_server_get_tokens():
+    handler = MockServerHandler("GET", "/api/tokens")
+    handler.do_GET()
+    assert handler.response_code == 200
+    data = json.loads(handler.wfile.getvalue().decode("utf-8"))
+    assert "tokens" in data
+    assert "USDC" in data["tokens"]
+    assert "WPHRS" in data["tokens"]
+    assert data["tokens"]["USDC"]["decimals"] == 6
+
+
+
+def test_server_get_sagas():
+    handler = MockServerHandler("GET", "/api/sagas")
+    handler.do_GET()
+    assert handler.response_code == 200
+    data = json.loads(handler.wfile.getvalue().decode("utf-8"))
+    assert "saga_id" in data
+    assert len(data["steps"]) == 3
+
+
+def test_server_post_api_reset():
+    handler = MockServerHandler("POST", "/api/reset")
+    handler.do_POST()
+    assert handler.response_code == 200
+    data = json.loads(handler.wfile.getvalue().decode("utf-8"))
+    assert data["status"] == "INITIALIZED"
+    assert data["total_steps"] == 3
+    assert data["steps_succeeded"] == 0
+    assert len(data["steps"]) == 3
+    assert data["steps"][0]["status"] == "PENDING"
+
+
+def test_server_post_api_run_manual_recovery():
+    payload = json.dumps({"force_fail_step": 3, "fail_compensation": True}).encode("utf-8")
+    handler = MockServerHandler("POST", "/api/run", body=payload)
+    handler.do_POST()
+    assert handler.response_code == 200
+    log = json.loads(handler.wfile.getvalue().decode("utf-8"))
+    assert log["status"] == "MANUAL_RECOVERY_REQUIRED"
+
+
+def test_server_post_api_run_invalid_step_validation():
+    payload = json.dumps({"force_fail_step": 99}).encode("utf-8")
+    handler = MockServerHandler("POST", "/api/run", body=payload)
+    handler.do_POST()
+    assert handler.response_code == 400
+    data = json.loads(handler.wfile.getvalue().decode("utf-8"))
+    assert "error" in data
+
+
+def test_server_post_api_run_invalid_retries_validation():
+    payload = json.dumps({"transient_retries": 100}).encode("utf-8")
+    handler = MockServerHandler("POST", "/api/run", body=payload)
+    handler.do_POST()
+    assert handler.response_code == 400
+    data = json.loads(handler.wfile.getvalue().decode("utf-8"))
+    assert "error" in data
+
+
+def test_server_post_api_run_invalid_json():
+    handler = MockServerHandler("POST", "/api/run", body=b"invalid-json-body")
+    handler.do_POST()
+    assert handler.response_code == 400
+    data = json.loads(handler.wfile.getvalue().decode("utf-8"))
+    assert "error" in data
+

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "saga_id": "wphrs_wrap_approve_v1",
+  "title": "Pharos WPHRS Wrapping & Allowance Management Saga",
+  "description": "Deterministic, zero-mock 2-step saga executing native PHRS wrapping and Permit2 allowance approval on Pharos Atlantic Testnet with reverse LIFO withdrawal compensation.",
+  "network": "atlantic",
+  "chain_id": 688689,
+  "steps": [
+    {
+      "step_id": "step_1_wrap",
+      "order": 1,
+      "name": "Wrap Native PHRS",
+      "action": "WPHRS_WRAP",
+      "contract": "0x838800b758277CC111B2d48Ab01e5E164f8E9471",
+      "method": "deposit()",
+      "payable": true,
+      "compensation": {
+        "action": "WPHRS_UNWRAP",
+        "description": "Withdraw WPHRS back to native PHRS via withdraw(uint256)",
+        "contract": "0x838800b758277CC111B2d48Ab01e5E164f8E9471",
+        "method": "withdraw(uint256)"
+      }
+    },
+    {
+      "step_id": "step_2_approve",
+      "order": 2,
+      "name": "Approve Spender Allowance",
+      "action": "WPHRS_APPROVE",
+      "contract": "0x838800b758277CC111B2d48Ab01e5E164f8E9471",
+      "spender": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "spender_name": "Canonical Permit2",
+      "method": "approve(address,uint256)",
+      "requires": ["step_1_wrap"],
+      "compensation": {
+        "action": "WPHRS_REVOKE_APPROVAL",
+        "description": "Reset WPHRS allowance to 0 for spender via approve(spender, 0)",
+        "contract": "0x838800b758277CC111B2d48Ab01e5E164f8E9471",
+        "spender": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "method": "approve(address, 0)"
+      }
+    }
+  ]
+}

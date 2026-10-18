@@ -1,11 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pharos Saga Executor - Visual DAG & State Machine</title>
+  <title>Pharos Saga Executor — Real On-Chain WPHRS Lifecycle Coordinator</title>
   <!-- Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfeff',
+              400: '#22d3ee',
+              500: '#06b6d4',
+              600: '#0891b2',
+              900: '#164e63',
+              950: '#083344',
+            },
+            dark: {
+              bg: '#080c14',
+              card: '#0f172a',
+              cardInner: '#0b1120',
+              border: 'rgba(255, 255, 255, 0.08)',
+              borderHover: 'rgba(6, 182, 212, 0.4)',
+            }
+          }
+        }
+      }
+    }
+  </script>
   <style>
     @keyframes pulse-slow {
       0%, 100% { opacity: 1; transform: scale(1); }
@@ -14,224 +40,481 @@
     .executing-pulse {
       animation: pulse-slow 1.5s infinite ease-in-out;
     }
-    .dag-line {
-      transition: stroke 0.4s ease, stroke-width 0.4s ease;
+    .glass-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-card-hover {
+      transition: all 0.25s ease;
+    }
+    .glass-card-hover:hover {
+      border-color: rgba(6, 182, 212, 0.4);
+      box-shadow: 0 10px 25px -5px rgba(6, 182, 212, 0.1);
+    }
+    .scrollbar-thin::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .scrollbar-thin::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+      background: rgba(51, 65, 85, 0.8);
+      border-radius: 3px;
     }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans flex flex-col">
+<body class="bg-[#080c14] text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-cyan-500 selection:text-black">
 
-  <!-- Top Security & Evaluation Banner -->
-  <header class="bg-amber-950/80 border-b border-amber-600/50 px-4 py-2.5 text-xs text-amber-200 flex flex-wrap items-center justify-between gap-2 shadow-inner">
+  <!-- Safety & Protocol Verification Banner -->
+  <div class="bg-gradient-to-r from-emerald-950 via-slate-900 to-cyan-950 border-b border-emerald-500/30 px-4 py-2 text-xs font-mono text-emerald-300 flex flex-wrap items-center justify-between gap-3 shadow-sm">
     <div class="flex items-center gap-2">
-      <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
-      <span class="font-bold tracking-wider uppercase">Sandbox Simulation Mode</span>
-      <span class="text-amber-300/80">| Target: Pharos Atlantic Testnet (Chain ID 688689)</span>
+      <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+      <span class="font-bold text-white tracking-wider">LIVE ON-CHAIN ENVIRONMENT</span>
+      <span class="text-slate-500">|</span>
+      <span>Pharos Atlantic Testnet (Chain ID <span class="text-emerald-400 font-bold">688689</span>)</span>
     </div>
-    <div class="text-amber-300 font-mono text-[11px] bg-black/40 px-2.5 py-0.5 rounded border border-amber-700/50">
-      Zero Private Keys Required &bull; Read-Only RPC &bull; Zero Funds Spent
+    <div class="flex items-center gap-4 text-[11px] text-slate-300">
+      <span>Verified Contract: <a href="https://atlantic.pharosscan.xyz/address/0x838800b758277CC111B2d48Ab01e5E164f8E9471" target="_blank" class="text-cyan-400 underline hover:text-cyan-300">WPHRS (0x8388...9471)</a></span>
+      <span class="text-slate-500">•</span>
+      <span class="text-emerald-300 font-medium">Non-Custodial · Zero Mock Data · Pure On-Chain</span>
     </div>
-  </header>
+  </div>
 
-  <!-- Navigation Bar -->
-  <nav class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-    <div class="flex items-center space-x-3">
-      <div class="w-9 h-9 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-cyan-500/20">
-        &#9881;
-      </div>
-      <div>
-        <h1 class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-          Pharos Saga Executor
-          <span class="text-xs font-mono font-normal bg-cyan-950 text-cyan-400 border border-cyan-800/60 px-2 py-0.5 rounded">
-            Task 6 &bull; SkillEngine v0.1.0
-          </span>
-        </h1>
-        <p class="text-xs text-slate-400">Deterministic Multi-Step Transaction Coordinator &amp; LIFO Rollback Engine</p>
-      </div>
-    </div>
-    <div class="flex items-center space-x-3 text-xs">
-      <div id="connectionStatus" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700">
-        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-        <span>Atlantic Testnet: 688689</span>
-      </div>
-    </div>
-  </nav>
+  <div class="flex-1 flex flex-col md:flex-row">
 
-  <!-- Main Workspace -->
-  <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
-
-    <!-- Control Station & Presets -->
-    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl">
-      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <!-- Left Sidebar -->
+    <aside class="w-full md:w-64 bg-[#0a0f1d] border-r border-slate-800/80 p-5 flex flex-col justify-between shrink-0">
+      <div class="space-y-6">
+        <!-- Brand / Identity -->
         <div>
-          <h2 class="text-sm font-semibold text-slate-200 uppercase tracking-wider">Evaluation Scenarios</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Select a pre-configured scenario or inject custom failure modes</p>
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 to-brand-400 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-black font-black text-lg">
+              Ψ
+            </div>
+            <div>
+              <div class="font-bold text-base text-white tracking-tight">Pharos Saga</div>
+              <div class="text-[11px] font-mono text-cyan-400">Task 6 · Hard Tier</div>
+            </div>
+          </div>
+          <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+            Deterministic WPHRS lifecycle coordinator with genuine on-chain wrapping and withdrawal recovery.
+          </p>
         </div>
-        <div class="flex flex-wrap items-center gap-2.5">
-          <button id="btnScenarioA" onclick="runScenario('happy')" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-md shadow-emerald-900/30 transition">
-            &#9654; Scenario A: Happy Path (3/3 Confirmed)
+
+        <!-- Navigation Links -->
+        <nav class="space-y-1">
+          <button onclick="scrollToSection('dashboardOverview')" class="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium rounded-lg bg-cyan-950/60 text-cyan-300 border border-cyan-800/50 hover:bg-cyan-900/40 transition">
+            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+            WPHRS Lifecycle
           </button>
-          <button id="btnScenarioB" onclick="runScenario('forced3')" class="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs shadow-md shadow-amber-900/30 transition">
-            &#9888; Scenario B: Forced Step 3 Fail (LIFO Rollback)
+          <button onclick="scrollToSection('executionLogSection')" class="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            Execution Stream
           </button>
-          <button id="btnScenarioC" onclick="runScenario('forced2')" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs transition">
-            Step 2 Fail
+          <button onclick="scrollToSection('stepInspectorSection')" class="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            State Inspector & Evidence
           </button>
-          <button id="btnScenarioD" onclick="runScenario('comp_fail')" class="px-3 py-2 rounded-lg bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800 text-xs transition">
-            Manual Recovery Demo
+          <button onclick="scrollToSection('safetySection')" class="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+            Safety & Non-Custodial Policy
           </button>
-          <button id="btnReset" onclick="resetPipeline()" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 text-xs transition">
-            Reset
-          </button>
+        </nav>
+
+        <!-- Network RPC Status Card -->
+        <div class="glass-card rounded-xl p-3.5 space-y-2 text-xs">
+          <div class="flex items-center justify-between text-slate-400 font-mono text-[11px]">
+            <span>ATLANTIC RPC</span>
+            <span class="inline-flex items-center gap-1.5 text-emerald-400">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span> ONLINE
+            </span>
+          </div>
+          <div class="space-y-1 text-slate-300 font-mono text-[11px]">
+            <div class="flex justify-between">
+              <span class="text-slate-500">Chain ID:</span>
+              <span class="text-white font-semibold">688689</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">Block Height:</span>
+              <span id="rpcBlockHeight" class="text-cyan-400">Reading...</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">Gas Price:</span>
+              <span id="rpcGasPrice" class="text-cyan-400">Reading...</span>
+            </div>
+          </div>
+          <div class="pt-1 border-t border-slate-800 text-[10px] text-slate-500">
+            Explorer: <a href="https://atlantic.pharosscan.xyz" target="_blank" class="text-cyan-400 underline">atlantic.pharosscan.xyz</a>
+          </div>
         </div>
       </div>
 
-      <!-- Advanced Injection Bar -->
-      <div class="mt-4 pt-4 border-t border-slate-800/80 flex flex-wrap items-center gap-6 text-xs text-slate-300">
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" id="chkTransientRetries" class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
-          <span>Inject Transient RPC Glitches (Test Backoff Retries)</span>
-        </label>
-        <div class="flex items-center gap-2">
-          <span class="text-slate-400">Saga Status:</span>
-          <span id="badgeSagaStatus" class="font-mono px-2.5 py-0.5 rounded text-xs bg-slate-800 text-slate-300 border border-slate-700">
-            INITIALIZED
-          </span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="text-slate-400">Total Gas Used:</span>
-          <span id="statGasUsed" class="font-mono text-cyan-400 font-semibold">0</span>
-        </div>
+      <!-- Developer Info -->
+      <div class="mt-6 pt-4 border-t border-slate-800/80 text-[11px] text-slate-500">
+        <div>SkillEngine <span class="text-slate-400 font-mono">v0.1.0</span></div>
+        <div class="text-slate-400 mt-0.5">Author: JimmyOgb</div>
       </div>
-    </div>
+    </aside>
 
-    <!-- Visual DAG Pipeline -->
-    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-6 shadow-xl relative overflow-hidden">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-          <span>Execution Directed Acyclic Graph (DAG)</span>
-          <span class="text-[10px] text-slate-500 font-mono">(Forward Execution &amp; Reverse LIFO Rollback)</span>
+    <!-- Main Content Area -->
+    <main class="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto">
+
+      <!-- Top Header & Live Wallet Connection -->
+      <header class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+        <div>
+          <div class="flex items-center gap-3">
+            <h1 class="text-2xl font-black text-white tracking-tight">WPHRS Lifecycle Coordinator</h1>
+            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-950 text-emerald-300 border border-emerald-500/40">
+              100% REAL ON-CHAIN
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            Deterministic native PHRS wrapping and withdrawal recovery on Pharos Atlantic Testnet. Each transaction requires separate wallet confirmation.
+          </p>
+        </div>
+
+        <!-- Wallet Connect Box -->
+        <div class="flex flex-wrap items-center gap-3">
+          <div id="walletInfoBox" class="hidden glass-card px-3.5 py-1.5 rounded-xl border border-slate-700/80 text-xs flex items-center gap-3">
+            <div>
+              <div class="text-[10px] text-slate-400 font-mono">CONNECTED WALLET</div>
+              <div id="walletAddressDisplay" class="font-mono text-cyan-300 font-semibold">0x...</div>
+            </div>
+            <button onclick="disconnectWallet()" class="text-slate-500 hover:text-rose-400 text-xs" title="Disconnect">✕</button>
+          </div>
+
+          <button id="btnConnectWallet" onclick="connectWallet()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-cyan-500 to-brand-500 hover:from-cyan-400 hover:to-brand-400 text-black shadow-lg shadow-cyan-500/25 transition active:scale-95 flex items-center gap-2">
+            <svg class="w-4 h-4 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            Connect Browser Wallet
+          </button>
+        </div>
+      </header>
+
+      <!-- Top Metric Cards (Live On-Chain Balances & State) -->
+      <section id="dashboardOverview" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Coordinator State Card -->
+        <div class="glass-card rounded-2xl p-4 glass-card-hover border-l-4 border-l-cyan-500">
+          <div class="flex items-center justify-between text-xs font-mono text-slate-400">
+            <span>COORDINATOR STATE</span>
+            <span id="sagaStateBadgeDot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+          </div>
+          <div id="metricSagaStatus" class="text-xl font-bold font-mono text-white mt-1 tracking-tight">INITIALIZED</div>
+          <div id="metricSagaSub" class="text-xs text-slate-400 mt-1 truncate">Ready for user action</div>
+        </div>
+
+        <!-- Native PHRS Balance -->
+        <div class="glass-card rounded-2xl p-4 glass-card-hover border-l-4 border-l-emerald-500">
+          <div class="flex items-center justify-between text-xs font-mono text-slate-400">
+            <span>NATIVE PHRS BALANCE</span>
+            <span class="text-[10px] text-emerald-400 font-semibold">TESTNET</span>
+          </div>
+          <div id="metricPhrsBalance" class="text-xl font-bold font-mono text-white mt-1 tracking-tight">-- PHRS</div>
+          <div class="text-xs text-slate-400 mt-1">Live on-chain via eth_getBalance</div>
+        </div>
+
+        <!-- WPHRS Token Balance -->
+        <div class="glass-card rounded-2xl p-4 glass-card-hover border-l-4 border-l-cyan-500">
+          <div class="flex items-center justify-between text-xs font-mono text-slate-400">
+            <span>WPHRS TOKEN BALANCE</span>
+            <span class="text-[10px] text-cyan-400 font-semibold">0x8388...9471</span>
+          </div>
+          <div id="metricWphrsBalance" class="text-xl font-bold font-mono text-white mt-1 tracking-tight">-- WPHRS</div>
+          <div class="text-xs text-slate-400 mt-1">Verified via WPHRS.balanceOf()</div>
+        </div>
+
+        <!-- Gas Accounting / Consumed -->
+        <div class="glass-card rounded-2xl p-4 glass-card-hover border-l-4 border-l-purple-500">
+          <div class="flex items-center justify-between text-xs font-mono text-slate-400">
+            <span>LAST GAS CONSUMED</span>
+            <span class="text-[10px] text-purple-400 font-semibold">ACTUAL</span>
+          </div>
+          <div id="metricGasConsumed" class="text-xl font-bold font-mono text-white mt-1 tracking-tight">0</div>
+          <div class="text-xs text-slate-400 mt-1">Mined receipt gasUsed</div>
+        </div>
+      </section>
+
+      <!-- Primary WPHRS Lifecycle Workflow (Two Distinct, User-Initiated Actions) -->
+      <section class="space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-sm font-bold text-white tracking-wide uppercase font-mono">
+              Primary Workflow · WPHRS Wrap & Unwrap Lifecycle
+            </h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Each state-changing action requires an explicit, separate confirmation in your browser wallet.
+            </p>
+          </div>
+          <button onclick="refreshLiveBalances()" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white bg-slate-900 border border-slate-800 transition">
+            Refresh Balances ⟳
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          <!-- Action 1: Wrap Native PHRS Card -->
+          <div id="nodeActionWrap" class="glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4 transition-all duration-300">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-mono text-cyan-400 font-semibold tracking-wider">ACTION 01 · FORWARD</span>
+                <span id="badgeActionWrap" class="text-[10px] font-mono px-2.5 py-0.5 rounded-full border bg-slate-800 text-slate-400 border-slate-700">AWAITING TRIGGER</span>
+              </div>
+              <h3 class="text-lg font-bold text-white mt-2">Wrap Native PHRS</h3>
+              <p class="text-xs text-slate-400 mt-1">
+                Converts native PHRS into WPHRS 1:1 via the verified on-chain payable method <code class="text-cyan-300 font-mono">deposit()</code>.
+              </p>
+
+              <!-- Amount Input & Pre-Flight Spec -->
+              <div class="mt-4 p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs font-mono">
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Wrap Amount:</span>
+                  <div class="flex items-center gap-1.5">
+                    <input id="inputWrapAmount" type="text" value="0.0001" class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-cyan-300 font-bold text-center focus:outline-none focus:border-cyan-500" />
+                    <span class="text-slate-400">PHRS</span>
+                  </div>
+                </div>
+                <div class="flex justify-between text-slate-400">
+                  <span>Contract:</span>
+                  <a href="https://atlantic.pharosscan.xyz/address/0x838800b758277CC111B2d48Ab01e5E164f8E9471" target="_blank" class="text-cyan-400 underline">0x8388...9471 (WPHRS)</a>
+                </div>
+                <div class="flex justify-between text-slate-400">
+                  <span>Estimated Gas:</span>
+                  <span class="text-slate-300">~28,000 gas (~0.00028 PHRS)</span>
+                </div>
+                <div class="flex justify-between text-slate-400">
+                  <span>Tx Hash:</span>
+                  <span id="txHashWrap" class="text-slate-300 truncate max-w-[190px]">None</span>
+                </div>
+              </div>
+            </div>
+
+            <button id="btnWrap" onclick="executeWrap()" class="w-full py-2.5 rounded-xl text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-black shadow-lg shadow-cyan-500/20 transition active:scale-95 flex items-center justify-center gap-2">
+              <span>▶</span> 1. Wrap PHRS (Prompt Wallet)
+            </button>
+          </div>
+
+          <!-- Action 2: Unwrap WPHRS Recovery Card -->
+          <div id="nodeActionUnwrap" class="glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4 transition-all duration-300">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-mono text-purple-400 font-semibold tracking-wider">ACTION 02 · RECOVERY / UNWIND</span>
+                <span id="badgeActionUnwrap" class="text-[10px] font-mono px-2.5 py-0.5 rounded-full border bg-slate-800 text-slate-400 border-slate-700">AWAITING TRIGGER</span>
+              </div>
+              <h3 class="text-lg font-bold text-white mt-2">Unwrap WPHRS Recovery</h3>
+              <p class="text-xs text-slate-400 mt-1">
+                Burns WPHRS and unwinds native PHRS back to your wallet via <code class="text-purple-300 font-mono">withdraw(uint256)</code>.
+              </p>
+
+              <!-- Amount Input & Pre-Flight Spec -->
+              <div class="mt-4 p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs font-mono">
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Unwrap Amount:</span>
+                  <div class="flex items-center gap-1.5">
+                    <input id="inputUnwrapAmount" type="text" value="0.0001" class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-purple-300 font-bold text-center focus:outline-none focus:border-purple-500" />
+                    <span class="text-slate-400">WPHRS</span>
+                    <button onclick="setMaxUnwrapAmount()" class="text-[10px] text-cyan-400 hover:text-cyan-300 px-1 py-0.5 rounded border border-cyan-800">MAX</button>
+                  </div>
+                </div>
+                <div class="flex justify-between text-slate-400">
+                  <span>Contract:</span>
+                  <a href="https://atlantic.pharosscan.xyz/address/0x838800b758277CC111B2d48Ab01e5E164f8E9471" target="_blank" class="text-cyan-400 underline">0x8388...9471 (WPHRS)</a>
+                </div>
+                <div class="flex justify-between text-slate-400">
+                  <span>Estimated Gas:</span>
+                  <span class="text-slate-300">~30,000 gas (~0.00030 PHRS)</span>
+                </div>
+                <div class="flex justify-between text-slate-400">
+                  <span>Tx Hash:</span>
+                  <span id="txHashUnwrap" class="text-slate-300 truncate max-w-[190px]">None</span>
+                </div>
+              </div>
+            </div>
+
+            <button id="btnUnwrap" onclick="executeUnwrap()" class="w-full py-2.5 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/20 transition active:scale-95 flex items-center justify-center gap-2">
+              <span>↺</span> 2. Unwrap WPHRS (Prompt Wallet)
+            </button>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Bottom Panels: Real Execution Log & Step Inspector -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Real-Time State Machine Execution Log (Left 2 Columns) -->
+        <section id="executionLogSection" class="lg:col-span-2 glass-card rounded-2xl p-5 border border-slate-800 flex flex-col h-[380px]">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+              <h2 class="text-xs font-bold text-white tracking-wider uppercase font-mono">Live On-Chain Execution Stream</h2>
+              <span id="logCounter" class="text-[11px] font-mono text-cyan-400">(0 events)</span>
+            </div>
+            <button onclick="clearLogs()" class="text-xs font-mono text-slate-500 hover:text-slate-300">Clear</button>
+          </div>
+          <div id="eventConsole" class="flex-1 overflow-y-auto space-y-2 pt-3 font-mono text-xs scrollbar-thin">
+            <div class="text-slate-500">// Ready. Connect browser wallet to read live balances and execute real transactions on Pharos Atlantic Testnet.</div>
+          </div>
+        </section>
+
+        <!-- Step Inspector & Manual Recovery Diagnostic Box (Right Column) -->
+        <section id="stepInspectorSection" class="glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between">
+          <div class="space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 class="text-xs font-bold text-white tracking-wider uppercase font-mono">State Inspector</h2>
+              <span class="text-[10px] font-mono text-slate-500">Live RPC</span>
+            </div>
+
+            <!-- Manual Recovery Alert Banner (Hidden by default) -->
+            <div id="inspAlertBox" class="hidden p-3.5 rounded-xl bg-rose-950/80 border border-rose-500/80 text-rose-200 text-xs space-y-2">
+              <div class="font-bold flex items-center gap-2 text-rose-300">
+                <span class="text-base">🚨</span> MANUAL_RECOVERY_REQUIRED
+              </div>
+              <p id="inspAlertMsg" class="leading-relaxed text-[11px]">
+                An on-chain transaction reverted or timed out. WPHRS remains in your wallet and can be recovered using Action 2 (Unwrap WPHRS).
+              </p>
+            </div>
+
+            <!-- On-Chain Diagnostics -->
+            <div class="space-y-2.5 text-xs font-mono">
+              <div class="flex justify-between">
+                <span class="text-slate-500">Active Wallet:</span>
+                <span id="inspWallet" class="text-slate-300">Not Connected</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Target Network:</span>
+                <span class="text-emerald-400">Pharos Atlantic (688689)</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Last Mined Tx:</span>
+                <span id="inspLastTx" class="text-slate-400 truncate max-w-[170px]">None</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Last Block:</span>
+                <span id="inspLastBlock" class="text-slate-300">--</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Receipt Status:</span>
+                <span id="inspLastStatus" class="text-slate-300">--</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Network Explorer Link -->
+          <div class="pt-4 border-t border-slate-800 text-[11px] text-slate-500">
+            Inspect all transactions on <a href="https://atlantic.pharosscan.xyz" target="_blank" class="text-cyan-400 underline hover:text-cyan-300">Pharos Atlantic Block Explorer</a>.
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Optional Experiment (Collapsible / Clearly Separated) -->
+      <section class="glass-card rounded-2xl p-5 border border-slate-800/80 text-xs space-y-3">
+        <details class="group">
+          <summary class="font-mono text-xs font-semibold text-slate-400 cursor-pointer flex items-center justify-between select-none hover:text-slate-200">
+            <span class="flex items-center gap-2">
+              <span>🔬</span> Optional Experiment: Standalone Allowance Staging (Permit2)
+            </span>
+            <span class="text-slate-500 group-open:rotate-180 transition-transform">▼</span>
+          </summary>
+          <div class="pt-4 mt-3 border-t border-slate-800/80 space-y-3 text-slate-400 leading-relaxed">
+            <div class="p-3 rounded-xl bg-amber-950/40 border border-amber-800/40 text-amber-200 text-xs">
+              <strong>Transparent Architecture Disclosure:</strong>
+              Atlantic Testnet currently does not have a public Uniswap Universal Router or AMM pool deployed. 
+              The controls below allow observing isolated ERC-20 approval (<code class="font-mono">approve(Permit2, amount)</code>) and revocation (<code class="font-mono">approve(Permit2, 0)</code>) state changes directly on the WPHRS contract, but they do <em>not</em> perform any downstream swap or vault deposit.
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3 pt-2">
+              <div class="text-xs font-mono text-slate-300">
+                Spender: <span class="text-cyan-300">Permit2 (0x000000000022D473030F116dDEE9F6B43aC78BA3)</span>
+              </div>
+              <div class="text-xs font-mono text-slate-300 ml-auto">
+                Current Allowance: <span id="expAllowanceDisplay" class="text-purple-300 font-bold">-- WPHRS</span>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3 pt-2">
+              <button onclick="executeExperimentApprove()" class="px-3.5 py-2 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+                Approve Bounded Allowance (0.0001 WPHRS)
+              </button>
+              <button onclick="executeExperimentRevoke()" class="px-3.5 py-2 rounded-xl text-xs font-medium bg-slate-900 hover:bg-slate-800 text-rose-300 border border-slate-800 transition">
+                Revoke Allowance (approve 0)
+              </button>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Safety & Non-Custodial Policy Section -->
+      <section id="safetySection" class="glass-card rounded-2xl p-5 border border-slate-800 text-xs space-y-2">
+        <h3 class="font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
+          <span>🛡</span> Non-Custodial Safety & Zero Simulation Boundary
         </h3>
-        <div class="text-[11px] text-slate-400 flex items-center gap-4">
-          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Confirmed</span>
-          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-violet-500"></span> Compensated</span>
-          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Failed</span>
-        </div>
-      </div>
+        <p class="text-slate-400 leading-relaxed">
+          The Pharos Saga Executor operates under strict safety constraints: target network is locked exclusively to 
+          <span class="text-slate-200 font-mono font-semibold">Pharos Atlantic Testnet (Chain ID 688689)</span>. 
+          All transactions are executed through your browser wallet (<code class="text-cyan-400">window.ethereum</code>) and require your explicit signature for each state change. 
+          Zero private keys are requested, stored, or accepted by the application. Every completed action is verified directly against on-chain transaction receipts and contract state reads before advancing or reporting completion.
+        </p>
+      </section>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+    </main>
 
-        <!-- Node 1: Approve -->
-        <div id="nodeStep1" class="border border-slate-800 bg-slate-950/70 rounded-xl p-4 transition-all duration-300">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-[11px] font-mono text-cyan-400 font-bold">STEP 01</span>
-            <span id="badgeStep1" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">PENDING</span>
-          </div>
-          <h4 class="font-semibold text-sm text-slate-100">Approve Token Allowance</h4>
-          <p class="text-xs text-slate-400 mt-1">ERC20_APPROVE &bull; 1,000 USDC</p>
-          <div class="mt-3 text-[11px] font-mono text-slate-400 bg-slate-900/90 p-2 rounded border border-slate-800/80 space-y-1">
-            <div class="truncate">Spender: <span class="text-slate-300">0x7099...79C8</span></div>
-            <div>Attempts: <span id="attStep1" class="text-slate-200">0</span> / 3</div>
-            <div class="truncate">Tx: <span id="txStep1" class="text-cyan-400">None</span></div>
-          </div>
-          <div id="compInfoStep1" class="hidden mt-2 pt-2 border-t border-slate-800 text-[10px] text-violet-400 flex items-center gap-1">
-            <span>&#8634; Rollback: Allowance reset to 0</span>
-          </div>
-        </div>
-
-        <!-- Node 2: Swap -->
-        <div id="nodeStep2" class="border border-slate-800 bg-slate-950/70 rounded-xl p-4 transition-all duration-300">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-[11px] font-mono text-cyan-400 font-bold">STEP 02</span>
-            <span id="badgeStep2" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">PENDING</span>
-          </div>
-          <h4 class="font-semibold text-sm text-slate-100">Execute Token Swap</h4>
-          <p class="text-xs text-slate-400 mt-1">SWAP_EXACT_TOKENS &bull; USDC &rarr; WPHRS</p>
-          <div class="mt-3 text-[11px] font-mono text-slate-400 bg-slate-900/90 p-2 rounded border border-slate-800/80 space-y-1">
-            <div class="truncate">Prereq: <span class="text-slate-300">step_1_approve</span></div>
-            <div>Attempts: <span id="attStep2" class="text-slate-200">0</span> / 3</div>
-            <div class="truncate">Tx: <span id="txStep2" class="text-cyan-400">None</span></div>
-          </div>
-          <div id="compInfoStep2" class="hidden mt-2 pt-2 border-t border-slate-800 text-[10px] text-violet-400 flex items-center gap-1">
-            <span>&#8634; Rollback: Unwound WPHRS &rarr; USDC</span>
-          </div>
-        </div>
-
-        <!-- Node 3: Deposit -->
-        <div id="nodeStep3" class="border border-slate-800 bg-slate-950/70 rounded-xl p-4 transition-all duration-300">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-[11px] font-mono text-cyan-400 font-bold">STEP 03</span>
-            <span id="badgeStep3" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">PENDING</span>
-          </div>
-          <h4 class="font-semibold text-sm text-slate-100">Deposit into Vault</h4>
-          <p class="text-xs text-slate-400 mt-1">VAULT_DEPOSIT &bull; 0.5 WPHRS</p>
-          <div class="mt-3 text-[11px] font-mono text-slate-400 bg-slate-900/90 p-2 rounded border border-slate-800/80 space-y-1">
-            <div class="truncate">Prereq: <span class="text-slate-300">step_2_swap</span></div>
-            <div>Attempts: <span id="attStep3" class="text-slate-200">0</span> / 3</div>
-            <div class="truncate">Tx: <span id="txStep3" class="text-cyan-400">None</span></div>
-          </div>
-          <div id="compInfoStep3" class="hidden mt-2 pt-2 border-t border-slate-800 text-[10px] text-violet-400 flex items-center gap-1">
-            <span>&#8634; Rollback: Shares redeemed to wallet</span>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- Live Event Log & Terminal -->
-    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl space-y-3">
-      <div class="flex items-center justify-between">
-        <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-          <span>Live State Machine Transition Log</span>
-          <span id="logCounter" class="text-[10px] font-mono text-slate-500">(0 events)</span>
-        </h3>
-        <button onclick="clearLogs()" class="text-xs text-slate-400 hover:text-slate-200">Clear</button>
-      </div>
-
-      <div id="eventConsole" class="bg-slate-950 font-mono text-xs text-slate-300 p-4 rounded-lg border border-slate-800 h-64 overflow-y-auto space-y-1.5 scrollbar-thin">
-        <div class="text-slate-500 italic">// Ready. Select a scenario above to start saga execution.</div>
-      </div>
-    </div>
-
-  </main>
+  </div>
 
   <!-- Footer -->
-  <footer class="bg-slate-900 border-t border-slate-800 px-6 py-4 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2">
-    <div>Pharos Agent Arena &bull; Task 6: Saga Executor &bull; Author: <span class="text-slate-300">JimmyOgb</span></div>
-    <div class="font-mono">MIT License &bull; Zero Third-Party Dependencies</div>
+  <footer class="bg-[#0a0f1d] border-t border-slate-800/80 px-6 py-4 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-4">
+    <div>Pharos Agent Arena &bull; Task 6: Saga Executor &bull; Author: <span class="text-slate-300 font-medium">JimmyOgb</span></div>
+    <div class="font-mono text-[11px]">MIT License &bull; Zero Mock Data &bull; SkillEngine v0.1.0</div>
   </footer>
 
-  <!-- Script Logic -->
+  <!-- Real On-Chain Web3 Client -->
   <script>
-    const STATE_COLORS = {
-      INITIALIZED: 'bg-slate-800 text-slate-300 border-slate-700',
-      EXECUTING: 'bg-blue-950 text-blue-300 border-blue-700 executing-pulse',
-      COMPLETED: 'bg-emerald-950 text-emerald-300 border-emerald-700',
-      COMPENSATING: 'bg-amber-950 text-amber-300 border-amber-700',
-      ROLLED_BACK: 'bg-violet-950 text-violet-300 border-violet-700',
-      MANUAL_RECOVERY_REQUIRED: 'bg-rose-950 text-rose-200 border-rose-600 animate-pulse',
-      FAILED: 'bg-rose-950 text-rose-300 border-rose-700',
-      CONFIRMED: 'bg-emerald-950 text-emerald-300 border-emerald-700',
-      COMPENSATED: 'bg-violet-950 text-violet-300 border-violet-700',
-      COMPENSATION_FAILED: 'bg-rose-950 text-rose-200 border-rose-600',
-      RETRIED: 'bg-amber-950 text-amber-300 border-amber-700',
-      PENDING: 'bg-slate-800 text-slate-400 border-slate-700'
-    };
+    const ATLANTIC_CHAIN_ID_HEX = '0xa8231'; // 688689
+    const ATLANTIC_CHAIN_ID_INT = 688689;
+    const ATLANTIC_RPC = 'https://atlantic.dplabs-internal.com';
+    const WPHRS_ADDRESS = '0x838800b758277CC111B2d48Ab01e5E164f8E9471';
+    const PERMIT2_SPENDER = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
+    let currentAccount = null;
     let eventCount = 0;
+    let isExecuting = false;
+    let cachedWphrsBalance = 0n;
+
+    function padAddress(addr) {
+      return addr.toLowerCase().replace('0x', '').padStart(64, '0');
+    }
+
+    function padUint256(numHex) {
+      return numHex.replace('0x', '').padStart(64, '0');
+    }
+
+    function toWeiHex(ethString) {
+      const parts = ethString.split('.');
+      const whole = parts[0] || '0';
+      const frac = (parts[1] || '').padEnd(18, '0').slice(0, 18);
+      const combined = BigInt(whole + frac);
+      return '0x' + combined.toString(16);
+    }
+
+    function formatEther(weiBigInt) {
+      const s = weiBigInt.toString().padStart(19, '0');
+      const whole = s.slice(0, -18) || '0';
+      const frac = s.slice(-18, -14); // 4 decimals
+      return `${whole}.${frac}`;
+    }
 
     function logEvent(text, type = 'info') {
       const consoleEl = document.getElementById('eventConsole');
       const time = new Date().toISOString().substring(11, 19);
       let colorClass = 'text-slate-300';
-      if (type === 'success') colorClass = 'text-emerald-400';
+      if (type === 'success') colorClass = 'text-emerald-400 font-medium';
       if (type === 'warn') colorClass = 'text-amber-400';
-      if (type === 'error') colorClass = 'text-rose-400';
-      if (type === 'comp') colorClass = 'text-violet-400';
+      if (type === 'error') colorClass = 'text-rose-400 font-semibold';
+      if (type === 'comp') colorClass = 'text-purple-400 font-medium';
 
       const entry = document.createElement('div');
-      entry.className = `${colorClass} leading-relaxed`;
-      entry.innerHTML = `<span class="text-slate-600">[${time}]</span> ${text}`;
+      entry.className = `${colorClass} leading-relaxed flex items-start gap-2`;
+      entry.innerHTML = `<span class="text-slate-600 select-none">[${time}]</span> <div>${text}</div>`;
       consoleEl.appendChild(entry);
       consoleEl.scrollTop = consoleEl.scrollHeight;
 
@@ -245,238 +528,417 @@
       document.getElementById('logCounter').innerText = '(0 events)';
     }
 
-    function updateBadge(elId, state) {
-      const el = document.getElementById(elId);
-      el.className = `text-[10px] font-mono px-2 py-0.5 rounded border ${STATE_COLORS[state] || STATE_COLORS.PENDING}`;
-      el.innerText = state;
+    function scrollToSection(id) {
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
     }
 
-    function updateNodeBorder(nodeId, state) {
-      const el = document.getElementById(nodeId);
-      el.classList.remove('border-emerald-600', 'border-rose-600', 'border-violet-600', 'border-blue-600', 'border-amber-600');
-      if (state === 'CONFIRMED') el.classList.add('border-emerald-600');
-      else if (state === 'FAILED' || state === 'COMPENSATION_FAILED') el.classList.add('border-rose-600');
-      else if (state === 'COMPENSATED') el.classList.add('border-violet-600');
-      else if (state === 'EXECUTING') el.classList.add('border-blue-600');
-      else if (state === 'COMPENSATING') el.classList.add('border-amber-600');
-    }
-
-    function resetPipeline() {
-      ['Step1', 'Step2', 'Step3'].forEach(id => {
-        updateBadge(`badge${id}`, 'PENDING');
-        updateNodeBorder(`node${id}`, 'PENDING');
-        document.getElementById(`att${id}`).innerText = '0';
-        document.getElementById(`tx${id}`).innerText = 'None';
-        document.getElementById(`compInfo${id}`).classList.add('hidden');
+    function setControlsLocked(locked) {
+      isExecuting = locked;
+      const btns = document.querySelectorAll('button');
+      btns.forEach(b => {
+        if (b.id !== 'btnConnectWallet') b.disabled = locked;
       });
-      document.getElementById('badgeSagaStatus').className = 'font-mono px-2.5 py-0.5 rounded text-xs bg-slate-800 text-slate-300 border border-slate-700';
-      document.getElementById('badgeSagaStatus').innerText = 'INITIALIZED';
-      document.getElementById('statGasUsed').innerText = '0';
-      logEvent('Pipeline reset to INITIALIZED state.');
     }
 
-    async function runScenario(mode) {
-      resetPipeline();
-      const transient = document.getElementById('chkTransientRetries').checked ? 1 : 0;
-
-      let payload = {
-        saga_id: `web_${mode}_${Date.now()}`,
-        transient_retries: transient,
-        force_fail_step: null,
-        fail_compensation: false
-      };
-
-      if (mode === 'happy') {
-        payload.force_fail_step = null;
-        logEvent('=== LAUNCHING SCENARIO A: HAPPY PATH (3/3 STEPS) ===', 'info');
-      } else if (mode === 'forced3') {
-        payload.force_fail_step = 3;
-        logEvent('=== LAUNCHING SCENARIO B: FORCED STEP 3 FAILURE (LIFO ROLLBACK) ===', 'warn');
-      } else if (mode === 'forced2') {
-        payload.force_fail_step = 2;
-        logEvent('=== LAUNCHING SCENARIO C: FORCED STEP 2 FAILURE ===', 'warn');
-      } else if (mode === 'comp_fail') {
-        payload.force_fail_step = 3;
-        payload.fail_compensation = true;
-        logEvent('=== LAUNCHING SCENARIO D: COMPENSATION FAILURE DEMO ===', 'error');
+    async function validateChainAndWallet() {
+      if (!window.ethereum || !currentAccount) {
+        throw new Error('Please connect your browser wallet first.');
+      }
+      // 1. Verify connected wallet chain ID
+      const walletChainId = await window.ethereum.request({ method: 'eth_chainId' });
+      if (walletChainId !== ATLANTIC_CHAIN_ID_HEX && parseInt(walletChainId, 16) !== ATLANTIC_CHAIN_ID_INT) {
+        throw new Error(`Wallet chain mismatch: Active wallet is connected to ${walletChainId}, expected Pharos Atlantic Testnet (688689). Please switch network.`);
       }
 
-      // Try invoking local server API, fallback to client simulation if file:// opened
+      // 2. Query eth_chainId directly from configured Atlantic RPC
+      let rpcChainId;
       try {
-        const resp = await fetch('/api/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (resp.ok) {
-          const logData = await resp.json();
-          renderExecutionLog(logData);
+        rpcChainId = await rpcCall('eth_chainId');
+      } catch (rpcErr) {
+        throw new Error(`RPC validation failed: Could not query chain ID from configured Atlantic RPC (${ATLANTIC_RPC}): ${rpcErr.message}`);
+      }
+
+      if (rpcChainId !== ATLANTIC_CHAIN_ID_HEX && parseInt(rpcChainId, 16) !== ATLANTIC_CHAIN_ID_INT) {
+        throw new Error(`RPC chain mismatch: Configured RPC reports ${rpcChainId}, expected Pharos Atlantic Testnet (688689 / 0xa8231). Transaction blocked.`);
+      }
+
+      return true;
+    }
+
+    // Direct RPC Read Helper
+    async function rpcCall(method, params = []) {
+      const res = await fetch(ATLANTIC_RPC, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+      return data.result;
+    }
+
+    // Wallet Connection & Chain Enforcement
+    async function connectWallet() {
+      if (!window.ethereum) {
+        alert('No browser wallet detected. Please install MetaMask, Rabby, or a compatible Web3 wallet.');
+        logEvent('Browser wallet not found. window.ethereum is undefined.', 'error');
+        return;
+      }
+
+      try {
+        logEvent('Connecting to browser wallet via window.ethereum...', 'info');
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        if (!accounts || accounts.length === 0) {
+          logEvent('User dismissed wallet connection request.', 'warn');
           return;
         }
+
+        currentAccount = accounts[0];
+        document.getElementById('walletInfoBox').classList.remove('hidden');
+        document.getElementById('btnConnectWallet').classList.add('hidden');
+        document.getElementById('walletAddressDisplay').innerText = `${currentAccount.substring(0, 6)}...${currentAccount.substring(38)}`;
+        document.getElementById('inspWallet').innerText = currentAccount;
+
+        // Verify Chain ID
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+        if (chainId !== ATLANTIC_CHAIN_ID_HEX && parseInt(chainId, 16) !== ATLANTIC_CHAIN_ID_INT) {
+          logEvent(`Wrong network detected (${chainId}). Switching to Pharos Atlantic Testnet (688689)...`, 'warn');
+          try {
+            await window.ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: ATLANTIC_CHAIN_ID_HEX }]
+            });
+          } catch (switchError) {
+            if (switchError.code === 4902) {
+              await window.ethereum.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                  chainId: ATLANTIC_CHAIN_ID_HEX,
+                  chainName: 'Pharos Atlantic Testnet',
+                  nativeCurrency: { name: 'Pharos', symbol: 'PHRS', decimals: 18 },
+                  rpcUrls: [ATLANTIC_RPC],
+                  blockExplorerUrls: ['https://atlantic.pharosscan.xyz']
+                }]
+              });
+            } else {
+              throw switchError;
+            }
+          }
+        }
+
+        logEvent(`Connected to account ${currentAccount} on Pharos Atlantic Testnet.`, 'success');
+        await refreshLiveBalances();
+
       } catch (err) {
-        // Fallback to client-side deterministic simulation
-        logEvent('Local server offline; executing via client-side deterministic simulation engine.', 'info');
+        logEvent(`Wallet connection failed: ${err.message}`, 'error');
       }
-
-      runClientSideSimulation(payload);
     }
 
-    function renderExecutionLog(log) {
-      document.getElementById('badgeSagaStatus').innerText = log.status;
-      document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS[log.status]}`;
-      document.getElementById('statGasUsed').innerText = log.total_gas_used.toLocaleString();
+    function disconnectWallet() {
+      currentAccount = null;
+      document.getElementById('walletInfoBox').classList.add('hidden');
+      document.getElementById('btnConnectWallet').classList.remove('hidden');
+      document.getElementById('inspWallet').innerText = 'Not Connected';
+      document.getElementById('metricPhrsBalance').innerText = '-- PHRS';
+      document.getElementById('metricWphrsBalance').innerText = '-- WPHRS';
+      document.getElementById('metricGasConsumed').innerText = '0';
+      document.getElementById('expAllowanceDisplay').innerText = '-- WPHRS';
+      logEvent('Wallet disconnected from UI.', 'info');
+    }
 
-      log.state_history.forEach(ev => {
-        let type = 'info';
-        if (ev.to_state.includes('CONFIRMED') || ev.to_state === 'COMPLETED') type = 'success';
-        if (ev.to_state.includes('FAILED') || ev.to_state.includes('MANUAL')) type = 'error';
-        if (ev.to_state.includes('COMPENSATED') || ev.to_state === 'ROLLED_BACK') type = 'comp';
-        logEvent(`[${ev.from_state} &rarr; ${ev.to_state}] (Attempt ${ev.attempt}) &bull; ${ev.reason || ''}`, type);
-      });
+    // Refresh On-Chain State from Real RPC
+    async function refreshLiveBalances() {
+      try {
+        const block = await rpcCall('eth_blockNumber');
+        const blockNum = parseInt(block, 16);
+        document.getElementById('rpcBlockHeight').innerText = `#${blockNum.toLocaleString()}`;
 
-      log.steps.forEach(s => {
-        const stepNum = s.order;
-        updateBadge(`badgeStep${stepNum}`, s.status);
-        updateNodeBorder(`nodeStep${stepNum}`, s.status);
-        document.getElementById(`attStep${stepNum}`).innerText = s.attempts;
-        const tx = s.tx_hash || (s.receipt ? s.receipt.tx_hash : 'None');
-        document.getElementById(`txStep${stepNum}`).innerText = tx ? tx.substring(0, 14) + '...' : 'None';
-        if (s.status === 'COMPENSATED') {
-          document.getElementById(`compInfo${stepNum}`).classList.remove('hidden');
+        const gasPriceHex = await rpcCall('eth_gasPrice');
+        const gasGwei = (parseInt(gasPriceHex, 16) / 1e9).toFixed(2);
+        document.getElementById('rpcGasPrice').innerText = `${gasGwei} Gwei`;
+
+        if (!currentAccount) return;
+
+        // 1. Native PHRS Balance
+        const phrsHex = await rpcCall('eth_getBalance', [currentAccount, 'latest']);
+        const phrsVal = BigInt(phrsHex || '0x0');
+        document.getElementById('metricPhrsBalance').innerText = `${formatEther(phrsVal)} PHRS`;
+
+        // 2. WPHRS Token Balance: balanceOf(currentAccount) -> 0x70a08231
+        const balData = '0x70a08231' + padAddress(currentAccount);
+        const wphrsHex = await rpcCall('eth_call', [{ to: WPHRS_ADDRESS, data: balData }, 'latest']);
+        cachedWphrsBalance = BigInt(wphrsHex || '0x0');
+        document.getElementById('metricWphrsBalance').innerText = `${formatEther(cachedWphrsBalance)} WPHRS`;
+
+        // 3. WPHRS Allowance for Permit2: allowance(currentAccount, PERMIT2_SPENDER) -> 0xdd62ed3e
+        const allowData = '0xdd62ed3e' + padAddress(currentAccount) + padAddress(PERMIT2_SPENDER);
+        const allowHex = await rpcCall('eth_call', [{ to: WPHRS_ADDRESS, data: allowData }, 'latest']);
+        const allowVal = BigInt(allowHex || '0x0');
+        document.getElementById('expAllowanceDisplay').innerText = `${formatEther(allowVal)} WPHRS`;
+
+        logEvent(`Live balances: Native ${formatEther(phrsVal)} PHRS | WPHRS ${formatEther(cachedWphrsBalance)}`, 'info');
+      } catch (err) {
+        logEvent(`Error fetching on-chain balances: ${err.message}`, 'error');
+      }
+    }
+
+    // Poll Mined Transaction Receipt on Atlantic Testnet
+    async function pollReceipt(txHash, maxAttempts = 30) {
+      logEvent(`Polling on-chain receipt for ${txHash.substring(0, 16)}...`, 'info');
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(r => setTimeout(r, 1500));
+        const receipt = await rpcCall('eth_getTransactionReceipt', [txHash]);
+        if (receipt) {
+          const status = receipt.status === '0x1' ? 'SUCCESS' : 'REVERTED';
+          const gas = parseInt(receipt.gasUsed, 16);
+          const block = parseInt(receipt.blockNumber, 16);
+          document.getElementById('inspLastTx').innerHTML = `<a href="https://atlantic.pharosscan.xyz/tx/${txHash}" target="_blank" class="text-cyan-400 underline">${txHash.substring(0, 12)}...</a>`;
+          document.getElementById('inspLastBlock').innerText = `#${block}`;
+          document.getElementById('inspLastStatus').innerText = status;
+          document.getElementById('metricGasConsumed').innerText = gas.toLocaleString();
+          return { receipt, status, gas, block };
         }
-      });
+      }
+      throw new Error(`Receipt timeout for transaction ${txHash} after ${maxAttempts} polls`);
     }
 
-    async function sleep(ms) {
-      return new Promise(resolve => setTimeout(resolve, ms));
+    function setMaxUnwrapAmount() {
+      if (cachedWphrsBalance > 0n) {
+        document.getElementById('inputUnwrapAmount').value = formatEther(cachedWphrsBalance);
+      }
     }
 
-    async function runClientSideSimulation(payload) {
-      document.getElementById('badgeSagaStatus').innerText = 'EXECUTING';
-      document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.EXECUTING}`;
+    // ACTION 1: Wrap Native PHRS into WPHRS (deposit)
+    async function executeWrap() {
+      if (isExecuting) return;
+      try {
+        await validateChainAndWallet();
+        setControlsLocked(true);
 
-      let gas = 0;
-      let completedSteps = [];
+        const amountStr = document.getElementById('inputWrapAmount').value.trim() || '0.0001';
+        const valueHex = toWeiHex(amountStr);
+        const valueBigInt = BigInt(valueHex);
 
-      // Step 1
-      updateBadge('badgeStep1', 'EXECUTING');
-      updateNodeBorder('nodeStep1', 'EXECUTING');
-      document.getElementById('attStep1').innerText = '1';
-      logEvent('Step 1 (Approve): Submitting ERC20_APPROVE transaction to Atlantic RPC...');
-      await sleep(500);
+        // Pre-flight balance check: ensure balance covers value + min testnet gas (0.0005 PHRS)
+        const phrsHex = await rpcCall('eth_getBalance', [currentAccount, 'latest']);
+        const phrsBalance = BigInt(phrsHex || '0x0');
+        const minRequired = valueBigInt + 500000000000000n; // + 0.0005 PHRS gas buffer
+        if (phrsBalance < minRequired) {
+          throw new Error(`Insufficient native PHRS: wallet has ${formatEther(phrsBalance)} PHRS, requires at least ${formatEther(minRequired)} PHRS for value + testnet gas.`);
+        }
 
-      if (payload.transient_retries > 0 && payload.force_fail_step !== 1) {
-        updateBadge('badgeStep1', 'RETRIED');
-        logEvent('Step 1 (Approve): Transient 503 error encountered. Performing backoff retry...', 'warn');
-        await sleep(500);
-        document.getElementById('attStep1').innerText = '2';
+        document.getElementById('badgeActionWrap').className = 'text-[10px] font-mono px-2.5 py-0.5 rounded-full border bg-cyan-950 text-cyan-300 border-cyan-500 executing-pulse';
+        document.getElementById('badgeActionWrap').innerText = 'PROMPTING WALLET';
+        document.getElementById('nodeActionWrap').className = 'glass-card rounded-2xl p-5 border border-cyan-500 shadow-lg shadow-cyan-500/20 flex flex-col justify-between space-y-4';
+        document.getElementById('metricSagaStatus').innerText = 'PROMPTING_WALLET';
+
+        logEvent(`Action 1: Requesting wallet signature to wrap ${amountStr} native PHRS -> WPHRS...`, 'info');
+
+        // Send real on-chain transaction: WPHRS.deposit() payable
+        const txHash = await window.ethereum.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: currentAccount,
+            to: WPHRS_ADDRESS,
+            value: valueHex,
+            data: '0xd0e30db0' // deposit()
+          }]
+        });
+
+        logEvent(`Transaction broadcast! Real Tx Hash: ${txHash}`, 'success');
+        document.getElementById('txHashWrap').innerHTML = `<a href="https://atlantic.pharosscan.xyz/tx/${txHash}" target="_blank" class="text-cyan-400 underline">${txHash.substring(0, 14)}...</a>`;
+        document.getElementById('badgeActionWrap').innerText = 'MINING ON-CHAIN';
+        document.getElementById('metricSagaStatus').innerText = 'MINING_ON_CHAIN';
+
+        const { status, gas, block } = await pollReceipt(txHash);
+        if (status === 'SUCCESS') {
+          document.getElementById('badgeActionWrap').className = 'text-[10px] font-mono px-2.5 py-0.5 rounded-full border bg-emerald-950 text-emerald-300 border-emerald-600';
+          document.getElementById('badgeActionWrap').innerText = 'CONFIRMED';
+          document.getElementById('nodeActionWrap').className = 'glass-card rounded-2xl p-5 border border-emerald-600 flex flex-col justify-between space-y-4';
+          document.getElementById('metricSagaStatus').innerText = 'CONFIRMED';
+          document.getElementById('metricSagaStatus').className = 'text-xl font-bold font-mono text-emerald-400 tracking-tight';
+          logEvent(`Action 1 CONFIRMED in block #${block}! ${amountStr} PHRS wrapped into WPHRS. Actual gas used: ${gas.toLocaleString()}`, 'success');
+          await refreshLiveBalances();
+          document.getElementById('inspAlertBox').classList.add('hidden');
+        } else {
+          throw new Error(`Wrap transaction reverted on-chain in block #${block}`);
+        }
+
+      } catch (err) {
+        document.getElementById('nodeActionWrap').className = 'glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4';
+        if (err.code === 4001 || err.message.includes('User rejected') || err.message.includes('ACTION_REJECTED')) {
+          document.getElementById('badgeActionWrap').className = 'text-[10px] font-mono px-2.5 py-0.5 rounded-full border bg-slate-800 text-slate-400 border-slate-700';
+          document.getElementById('badgeActionWrap').innerText = 'REJECTED';
+          document.getElementById('metricSagaStatus').innerText = 'REJECTED';
+          document.getElementById('metricSagaStatus').className = 'text-xl font-bold font-mono text-slate-400 tracking-tight';
+          logEvent('Action 1 cancelled: User rejected transaction in wallet.', 'warn');
+        } else {
+          document.getElementById('badgeActionWrap').className = 'text-[10px] font-mono px-2.5 py-0.5 rounded-full border bg-rose-950 text-rose-300 border-rose-600 font-bold';
+          document.getElementById('badgeActionWrap').innerText = 'FAILED';
+          document.getElementById('metricSagaStatus').innerText = 'FAILED';
+          document.getElementById('metricSagaStatus').className = 'text-xl font-bold font-mono text-rose-400 tracking-tight';
+          logEvent(`Action 1 failed: ${err.message}`, 'error');
+        }
+      } finally {
+        setControlsLocked(false);
       }
-
-      if (payload.force_fail_step === 1) {
-        updateBadge('badgeStep1', 'FAILED');
-        updateNodeBorder('nodeStep1', 'FAILED');
-        logEvent('Step 1 (Approve): Contract reverted. Halting.', 'error');
-        document.getElementById('badgeSagaStatus').innerText = 'ROLLED_BACK';
-        return;
-      }
-
-      gas += 45000;
-      const tx1 = '0xsim_' + Math.random().toString(16).substring(2, 14);
-      document.getElementById('txStep1').innerText = tx1;
-      updateBadge('badgeStep1', 'CONFIRMED');
-      updateNodeBorder('nodeStep1', 'CONFIRMED');
-      document.getElementById('statGasUsed').innerText = gas.toLocaleString();
-      logEvent(`Step 1 (Approve): Receipt verified on block #31569442. Hash: ${tx1} (45,000 gas)`, 'success');
-      completedSteps.push(1);
-      await sleep(600);
-
-      // Step 2
-      updateBadge('badgeStep2', 'EXECUTING');
-      updateNodeBorder('nodeStep2', 'EXECUTING');
-      document.getElementById('attStep2').innerText = '1';
-      logEvent('Step 2 (Swap): Submitting SWAP_EXACT_TOKENS to router...');
-      await sleep(500);
-
-      if (payload.force_fail_step === 2) {
-        updateBadge('badgeStep2', 'FAILED');
-        updateNodeBorder('nodeStep2', 'FAILED');
-        logEvent('Step 2 (Swap): Slippage limit exceeded. Permanent revert!', 'error');
-        await rollback(completedSteps, payload.fail_compensation);
-        return;
-      }
-
-      gas += 115000;
-      const tx2 = '0xsim_' + Math.random().toString(16).substring(2, 14);
-      document.getElementById('txStep2').innerText = tx2;
-      updateBadge('badgeStep2', 'CONFIRMED');
-      updateNodeBorder('nodeStep2', 'CONFIRMED');
-      document.getElementById('statGasUsed').innerText = gas.toLocaleString();
-      logEvent(`Step 2 (Swap): Receipt verified on block #31569443. Hash: ${tx2} (115,000 gas)`, 'success');
-      completedSteps.push(2);
-      await sleep(600);
-
-      // Step 3
-      updateBadge('badgeStep3', 'EXECUTING');
-      updateNodeBorder('nodeStep3', 'EXECUTING');
-      document.getElementById('attStep3').innerText = '1';
-      logEvent('Step 3 (Deposit): Submitting VAULT_DEPOSIT to Atlantic vault...');
-      await sleep(500);
-
-      if (payload.force_fail_step === 3) {
-        updateBadge('badgeStep3', 'FAILED');
-        updateNodeBorder('nodeStep3', 'FAILED');
-        logEvent('Step 3 (Deposit): VAULT_CAP_EXCEEDED. Permanent revert!', 'error');
-        await rollback(completedSteps, payload.fail_compensation);
-        return;
-      }
-
-      gas += 85000;
-      const tx3 = '0xsim_' + Math.random().toString(16).substring(2, 14);
-      document.getElementById('txStep3').innerText = tx3;
-      updateBadge('badgeStep3', 'CONFIRMED');
-      updateNodeBorder('nodeStep3', 'CONFIRMED');
-      document.getElementById('statGasUsed').innerText = gas.toLocaleString();
-      logEvent(`Step 3 (Deposit): Receipt verified on block #31569444. Hash: ${tx3} (85,000 gas)`, 'success');
-
-      document.getElementById('badgeSagaStatus').innerText = 'COMPLETED';
-      document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.COMPLETED}`;
-      logEvent('=== SAGA COMPLETED: All 3 dependent transactions confirmed ===', 'success');
     }
 
-    async function rollback(completedSteps, failComp) {
-      document.getElementById('badgeSagaStatus').innerText = 'COMPENSATING';
-      document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.COMPENSATING}`;
-      logEvent('Triggering reverse LIFO compensation rollback...', 'warn');
-      await sleep(500);
+    // ACTION 2: Unwrap WPHRS Recovery (withdraw)
+    async function executeUnwrap() {
+      if (isExecuting) return;
+      try {
+        await validateChainAndWallet();
+        setControlsLocked(true);
 
-      const reversed = [...completedSteps].reverse();
-      for (const stepNum of reversed) {
-        updateBadge(`badgeStep${stepNum}`, 'COMPENSATING');
-        updateNodeBorder(`nodeStep${stepNum}`, 'COMPENSATING');
-        logEvent(`Unwinding Step ${stepNum}...`, 'warn');
-        await sleep(500);
+        const amountStr = document.getElementById('inputUnwrapAmount').value.trim() || '0.0001';
+        const wadHex = toWeiHex(amountStr);
+        const wadBigInt = BigInt(wadHex);
 
-        if (failComp && stepNum === 2) {
-          updateBadge(`badgeStep${stepNum}`, 'COMPENSATION_FAILED');
-          updateNodeBorder(`nodeStep${stepNum}`, 'COMPENSATION_FAILED');
-          logEvent(`CRITICAL: Compensation for Step ${stepNum} failed!`, 'error');
-          document.getElementById('badgeSagaStatus').innerText = 'MANUAL_RECOVERY_REQUIRED';
-          document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.MANUAL_RECOVERY_REQUIRED}`;
-          logEvent('EMERGENCY SNAPSHOT DUMPED: Halting to preserve stranded assets.', 'error');
+        // Pre-flight check 1: Fresh read of WPHRS token balance from RPC
+        const balData = '0x70a08231' + padAddress(currentAccount);
+        const freshWphrsHex = await rpcCall('eth_call', [{ to: WPHRS_ADDRESS, data: balData }, 'latest']);
+        const freshWphrsBalance = BigInt(freshWphrsHex || '0x0');
+        cachedWphrsBalance = freshWphrsBalance;
+        if (freshWphrsBalance < wadBigInt) {
+          throw new Error(`Insufficient WPHRS balance: wallet holds ${formatEther(freshWphrsBalance)} WPHRS, requested ${amountStr} WPHRS.`);
+        }
+
+        // Pre-flight check 2: Fresh read of native PHRS balance from RPC for gas reserve
+        const phrsHex = await rpcCall('eth_getBalance', [currentAccount, 'latest']);
+        const phrsBalance = BigInt(phrsHex || '0x0');
+        const minUnwrapGasReserve = 300000000000000n; // 0.0003 PHRS (estimated unwrap gas: ~30,000 gas)
+        if (phrsBalance < minUnwrapGasReserve) {
+          throw new Error(`Insufficient native PHRS for gas: wallet holds ${formatEther(phrsBalance)} PHRS. Preflight requires at least 0.0003 PHRS reserve to pay unwrap transaction gas (note: preflight estimate, not a guarantee of sufficient gas).`);
+        }
+
+        document.getElementById('badgeActionUnwrap').className = 'text-[10px] font-mono px-2.5 py-0.5 rounded-full border bg-purple-950 text-purple-300 border-purple-500 executing-pulse';
+        document.getElementById('badgeActionUnwrap').innerText = 'PROMPTING WALLET';
+        document.getElementById('nodeActionUnwrap').className = 'glass-card rounded-2xl p-5 border border-purple-500 shadow-lg shadow-purple-500/20 flex flex-col justify-between space-y-4';
+        document.getElementById('metricSagaStatus').innerText = 'PROMPTING_WALLET';
+
+        logEvent(`Action 2: Requesting wallet signature to unwrap ${amountStr} WPHRS -> native PHRS via withdraw()...`, 'info');
+
+        // withdraw(uint256 wad) = 0x2e1a7d4d
+        const callData = '0x2e1a7d4d' + padUint256(wadHex);
+        const txHash = await window.ethereum.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: currentAccount,
+            to: WPHRS_ADDRESS,
+            data: callData
+          }]
+        });
+
+        logEvent(`Unwrap transaction broadcast! Real Tx Hash: ${txHash}`, 'comp');
+        document.getElementById('txHashUnwrap').innerHTML = `<a href="https://atlantic.pharosscan.xyz/tx/${txHash}" target="_blank" class="text-purple-400 underline">${txHash.substring(0, 14)}...</a>`;
+        document.getElementById('badgeActionUnwrap').innerText = 'MINING ON-CHAIN';
+        document.getElementById('metricSagaStatus').innerText = 'MINING_ON_CHAIN';
+
+        const { status, gas, block } = await pollReceipt(txHash);
+        if (status === 'SUCCESS') {
+          // Re-verify actual on-chain state BEFORE reporting completion
+          await refreshLiveBalances();
+
+          document.getElementById('badgeActionUnwrap').className = 'text-[10px] font-mono px-2.5 py-0.5 rounded-full border bg-purple-950 text-purple-300 border-purple-600';
+          document.getElementById('badgeActionUnwrap').innerText = 'COMPENSATED';
+          document.getElementById('nodeActionUnwrap').className = 'glass-card rounded-2xl p-5 border border-purple-600 flex flex-col justify-between space-y-4';
+          document.getElementById('metricSagaStatus').innerText = 'ROLLED_BACK';
+          document.getElementById('metricSagaStatus').className = 'text-xl font-bold font-mono text-purple-400 tracking-tight';
+          document.getElementById('inspAlertBox').classList.add('hidden');
+          logEvent(`Action 2 CONFIRMED in block #${block}! ${amountStr} WPHRS unwound back to native PHRS (net of ${gas.toLocaleString()} gas).`, 'comp');
+        } else {
+          throw new Error(`Unwrap transaction reverted on-chain in block #${block}`);
+        }
+
+      } catch (err) {
+        document.getElementById('nodeActionUnwrap').className = 'glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4';
+        if (err.code === 4001 || err.message.includes('User rejected') || err.message.includes('ACTION_REJECTED')) {
+          document.getElementById('badgeActionUnwrap').className = 'text-[10px] font-mono px-2.5 py-0.5 rounded-full border bg-slate-800 text-slate-400 border-slate-700';
+          document.getElementById('badgeActionUnwrap').innerText = 'REJECTED';
+          document.getElementById('metricSagaStatus').innerText = 'MANUAL_RECOVERY_REQUIRED';
+          document.getElementById('metricSagaStatus').className = 'text-xl font-bold font-mono text-rose-400 tracking-tight animate-pulse';
+          document.getElementById('inspAlertBox').classList.remove('hidden');
+          document.getElementById('inspAlertMsg').innerText = 'Unwrap action was rejected in wallet. WPHRS remains in your wallet and requires unwinding when ready.';
+          logEvent('Action 2 cancelled: User rejected transaction in wallet.', 'warn');
+        } else {
+          document.getElementById('badgeActionUnwrap').className = 'text-[10px] font-mono px-2.5 py-0.5 rounded-full border bg-rose-950 text-rose-300 border-rose-600 font-bold';
+          document.getElementById('badgeActionUnwrap').innerText = 'FAILED';
+          document.getElementById('metricSagaStatus').innerText = 'MANUAL_RECOVERY_REQUIRED';
+          document.getElementById('metricSagaStatus').className = 'text-xl font-bold font-mono text-rose-400 tracking-tight animate-pulse';
+          document.getElementById('inspAlertBox').classList.remove('hidden');
+          document.getElementById('inspAlertMsg').innerText = `Unwrap failed on-chain: ${err.message}. WPHRS remains in your wallet.`;
+          logEvent(`Action 2 failed: ${err.message}`, 'error');
+        }
+      } finally {
+        setControlsLocked(false);
+      }
+    }
+
+    // Optional Experiment Functions (Strictly Isolated)
+    async function executeExperimentApprove() {
+      try {
+        await validateChainAndWallet();
+        logEvent(`Experiment: Requesting wallet signature to approve 0.0001 WPHRS for Permit2...`, 'info');
+        const wadHex = toWeiHex('0.0001');
+        const callData = '0x095ea7b3' + padAddress(PERMIT2_SPENDER) + padUint256(wadHex);
+        const txHash = await window.ethereum.request({
+          method: 'eth_sendTransaction',
+          params: [{ from: currentAccount, to: WPHRS_ADDRESS, data: callData }]
+        });
+        logEvent(`Experiment approve broadcast: ${txHash}`, 'info');
+        await pollReceipt(txHash);
+        logEvent('Experiment approve confirmed on-chain.', 'success');
+        await refreshLiveBalances();
+      } catch (err) {
+        logEvent(`Experiment approve failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function executeExperimentRevoke() {
+      try {
+        await validateChainAndWallet();
+        const allowData = '0xdd62ed3e' + padAddress(currentAccount) + padAddress(PERMIT2_SPENDER);
+        const allowHex = await rpcCall('eth_call', [{ to: WPHRS_ADDRESS, data: allowData }, 'latest']);
+        if (BigInt(allowHex || '0x0') === 0n) {
+          logEvent('Allowance is already 0 WPHRS. Zero on-chain transaction needed.', 'info');
           return;
         }
-
-        updateBadge(`badgeStep${stepNum}`, 'COMPENSATED');
-        updateNodeBorder(`nodeStep${stepNum}`, 'COMPENSATED');
-        document.getElementById(`compInfo${stepNum}`).classList.remove('hidden');
-        logEvent(`Step ${stepNum} compensated successfully in reverse order.`, 'comp');
+        logEvent(`Experiment: Revoking Permit2 allowance (approve 0)...`, 'info');
+        const callData = '0x095ea7b3' + padAddress(PERMIT2_SPENDER) + padUint256('0x0');
+        const txHash = await window.ethereum.request({
+          method: 'eth_sendTransaction',
+          params: [{ from: currentAccount, to: WPHRS_ADDRESS, data: callData }]
+        });
+        logEvent(`Experiment revoke broadcast: ${txHash}`, 'info');
+        await pollReceipt(txHash);
+        logEvent('Allowance revoked on-chain to 0.', 'success');
+        await refreshLiveBalances();
+      } catch (err) {
+        logEvent(`Experiment revoke failed: ${err.message}`, 'error');
       }
-
-      document.getElementById('badgeSagaStatus').innerText = 'ROLLED_BACK';
-      document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.ROLLED_BACK}`;
-      logEvent('=== SAGA ROLLED_BACK: Simulated compensation completed in reverse order; no real assets or on-chain state were changed. ===', 'comp');
-      logEvent('Note: Real on-chain compensation consumes gas, may incur AMM slippage, and cannot erase prior transactions.', 'warn');
     }
+
+    // Initialize Page
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshLiveBalances();
+      if (window.ethereum) {
+        window.ethereum.on('accountsChanged', (accounts) => {
+          if (accounts.length > 0) {
+            currentAccount = accounts[0];
+            document.getElementById('walletAddressDisplay').innerText = `${currentAccount.substring(0, 6)}...${currentAccount.substring(38)}`;
+            document.getElementById('inspWallet').innerText = currentAccount;
+            refreshLiveBalances();
+          } else {
+            disconnectWallet();
+          }
+        });
+        window.ethereum.on('chainChanged', () => {
+          window.location.reload();
+        });
+      }
+    });
   </script>
 </body>
 </html>
