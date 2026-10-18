@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pharos Saga Executor - Visual DAG & State Machine</title>
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes pulse-slow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.02); }
+    }
+    .executing-pulse {
+      animation: pulse-slow 1.5s infinite ease-in-out;
+    }
+    .dag-line {
+      transition: stroke 0.4s ease, stroke-width 0.4s ease;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans flex flex-col">
+
+  <!-- Top Security & Evaluation Banner -->
+  <header class="bg-amber-950/80 border-b border-amber-600/50 px-4 py-2.5 text-xs text-amber-200 flex flex-wrap items-center justify-between gap-2 shadow-inner">
+    <div class="flex items-center gap-2">
+      <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
+      <span class="font-bold tracking-wider uppercase">Sandbox Simulation Mode</span>
+      <span class="text-amber-300/80">| Target: Pharos Atlantic Testnet (Chain ID 688689)</span>
+    </div>
+    <div class="text-amber-300 font-mono text-[11px] bg-black/40 px-2.5 py-0.5 rounded border border-amber-700/50">
+      Zero Private Keys Required &bull; Read-Only RPC &bull; Zero Funds Spent
+    </div>
+  </header>
+
+  <!-- Navigation Bar -->
+  <nav class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-cyan-500/20">
+        &#9881;
+      </div>
+      <div>
+        <h1 class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+          Pharos Saga Executor
+          <span class="text-xs font-mono font-normal bg-cyan-950 text-cyan-400 border border-cyan-800/60 px-2 py-0.5 rounded">
+            Task 6 &bull; SkillEngine v0.1.0
+          </span>
+        </h1>
+        <p class="text-xs text-slate-400">Deterministic Multi-Step Transaction Coordinator &amp; LIFO Rollback Engine</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-3 text-xs">
+      <div id="connectionStatus" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span>Atlantic Testnet: 688689</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
+
+    <!-- Control Station & Presets -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-sm font-semibold text-slate-200 uppercase tracking-wider">Evaluation Scenarios</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Select a pre-configured scenario or inject custom failure modes</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2.5">
+          <button id="btnScenarioA" onclick="runScenario('happy')" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-md shadow-emerald-900/30 transition">
+            &#9654; Scenario A: Happy Path (3/3 Confirmed)
+          </button>
+          <button id="btnScenarioB" onclick="runScenario('forced3')" class="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs shadow-md shadow-amber-900/30 transition">
+            &#9888; Scenario B: Forced Step 3 Fail (LIFO Rollback)
+          </button>
+          <button id="btnScenarioC" onclick="runScenario('forced2')" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs transition">
+            Step 2 Fail
+          </button>
+          <button id="btnScenarioD" onclick="runScenario('comp_fail')" class="px-3 py-2 rounded-lg bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800 text-xs transition">
+            Manual Recovery Demo
+          </button>
+          <button id="btnReset" onclick="resetPipeline()" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 text-xs transition">
+            Reset
+          </button>
+        </div>
+      </div>
+
+      <!-- Advanced Injection Bar -->
+      <div class="mt-4 pt-4 border-t border-slate-800/80 flex flex-wrap items-center gap-6 text-xs text-slate-300">
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="chkTransientRetries" class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+          <span>Inject Transient RPC Glitches (Test Backoff Retries)</span>
+        </label>
+        <div class="flex items-center gap-2">
+          <span class="text-slate-400">Saga Status:</span>
+          <span id="badgeSagaStatus" class="font-mono px-2.5 py-0.5 rounded text-xs bg-slate-800 text-slate-300 border border-slate-700">
+            INITIALIZED
+          </span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-slate-400">Total Gas Used:</span>
+          <span id="statGasUsed" class="font-mono text-cyan-400 font-semibold">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visual DAG Pipeline -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-6 shadow-xl relative overflow-hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+          <span>Execution Directed Acyclic Graph (DAG)</span>
+          <span class="text-[10px] text-slate-500 font-mono">(Forward Execution &amp; Reverse LIFO Rollback)</span>
+        </h3>
+        <div class="text-[11px] text-slate-400 flex items-center gap-4">
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Confirmed</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-violet-500"></span> Compensated</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Failed</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+
+        <!-- Node 1: Approve -->
+        <div id="nodeStep1" class="border border-slate-800 bg-slate-950/70 rounded-xl p-4 transition-all duration-300">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[11px] font-mono text-cyan-400 font-bold">STEP 01</span>
+            <span id="badgeStep1" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">PENDING</span>
+          </div>
+          <h4 class="font-semibold text-sm text-slate-100">Approve Token Allowance</h4>
+          <p class="text-xs text-slate-400 mt-1">ERC20_APPROVE &bull; 1,000 USDC</p>
+          <div class="mt-3 text-[11px] font-mono text-slate-400 bg-slate-900/90 p-2 rounded border border-slate-800/80 space-y-1">
+            <div class="truncate">Spender: <span class="text-slate-300">0x7099...79C8</span></div>
+            <div>Attempts: <span id="attStep1" class="text-slate-200">0</span> / 3</div>
+            <div class="truncate">Tx: <span id="txStep1" class="text-cyan-400">None</span></div>
+          </div>
+          <div id="compInfoStep1" class="hidden mt-2 pt-2 border-t border-slate-800 text-[10px] text-violet-400 flex items-center gap-1">
+            <span>&#8634; Rollback: Allowance reset to 0</span>
+          </div>
+        </div>
+
+        <!-- Node 2: Swap -->
+        <div id="nodeStep2" class="border border-slate-800 bg-slate-950/70 rounded-xl p-4 transition-all duration-300">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[11px] font-mono text-cyan-400 font-bold">STEP 02</span>
+            <span id="badgeStep2" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">PENDING</span>
+          </div>
+          <h4 class="font-semibold text-sm text-slate-100">Execute Token Swap</h4>
+          <p class="text-xs text-slate-400 mt-1">SWAP_EXACT_TOKENS &bull; USDC &rarr; WPHRS</p>
+          <div class="mt-3 text-[11px] font-mono text-slate-400 bg-slate-900/90 p-2 rounded border border-slate-800/80 space-y-1">
+            <div class="truncate">Prereq: <span class="text-slate-300">step_1_approve</span></div>
+            <div>Attempts: <span id="attStep2" class="text-slate-200">0</span> / 3</div>
+            <div class="truncate">Tx: <span id="txStep2" class="text-cyan-400">None</span></div>
+          </div>
+          <div id="compInfoStep2" class="hidden mt-2 pt-2 border-t border-slate-800 text-[10px] text-violet-400 flex items-center gap-1">
+            <span>&#8634; Rollback: Unwound WPHRS &rarr; USDC</span>
+          </div>
+        </div>
+
+        <!-- Node 3: Deposit -->
+        <div id="nodeStep3" class="border border-slate-800 bg-slate-950/70 rounded-xl p-4 transition-all duration-300">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[11px] font-mono text-cyan-400 font-bold">STEP 03</span>
+            <span id="badgeStep3" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">PENDING</span>
+          </div>
+          <h4 class="font-semibold text-sm text-slate-100">Deposit into Vault</h4>
+          <p class="text-xs text-slate-400 mt-1">VAULT_DEPOSIT &bull; 0.5 WPHRS</p>
+          <div class="mt-3 text-[11px] font-mono text-slate-400 bg-slate-900/90 p-2 rounded border border-slate-800/80 space-y-1">
+            <div class="truncate">Prereq: <span class="text-slate-300">step_2_swap</span></div>
+            <div>Attempts: <span id="attStep3" class="text-slate-200">0</span> / 3</div>
+            <div class="truncate">Tx: <span id="txStep3" class="text-cyan-400">None</span></div>
+          </div>
+          <div id="compInfoStep3" class="hidden mt-2 pt-2 border-t border-slate-800 text-[10px] text-violet-400 flex items-center gap-1">
+            <span>&#8634; Rollback: Shares redeemed to wallet</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Live Event Log & Terminal -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+          <span>Live State Machine Transition Log</span>
+          <span id="logCounter" class="text-[10px] font-mono text-slate-500">(0 events)</span>
+        </h3>
+        <button onclick="clearLogs()" class="text-xs text-slate-400 hover:text-slate-200">Clear</button>
+      </div>
+
+      <div id="eventConsole" class="bg-slate-950 font-mono text-xs text-slate-300 p-4 rounded-lg border border-slate-800 h-64 overflow-y-auto space-y-1.5 scrollbar-thin">
+        <div class="text-slate-500 italic">// Ready. Select a scenario above to start saga execution.</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-slate-900 border-t border-slate-800 px-6 py-4 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2">
+    <div>Pharos Agent Arena &bull; Task 6: Saga Executor &bull; Author: <span class="text-slate-300">JimmyOgb</span></div>
+    <div class="font-mono">MIT License &bull; Zero Third-Party Dependencies</div>
+  </footer>
+
+  <!-- Script Logic -->
+  <script>
+    const STATE_COLORS = {
+      INITIALIZED: 'bg-slate-800 text-slate-300 border-slate-700',
+      EXECUTING: 'bg-blue-950 text-blue-300 border-blue-700 executing-pulse',
+      COMPLETED: 'bg-emerald-950 text-emerald-300 border-emerald-700',
+      COMPENSATING: 'bg-amber-950 text-amber-300 border-amber-700',
+      ROLLED_BACK: 'bg-violet-950 text-violet-300 border-violet-700',
+      MANUAL_RECOVERY_REQUIRED: 'bg-rose-950 text-rose-200 border-rose-600 animate-pulse',
+      FAILED: 'bg-rose-950 text-rose-300 border-rose-700',
+      CONFIRMED: 'bg-emerald-950 text-emerald-300 border-emerald-700',
+      COMPENSATED: 'bg-violet-950 text-violet-300 border-violet-700',
+      COMPENSATION_FAILED: 'bg-rose-950 text-rose-200 border-rose-600',
+      RETRIED: 'bg-amber-950 text-amber-300 border-amber-700',
+      PENDING: 'bg-slate-800 text-slate-400 border-slate-700'
+    };
+
+    let eventCount = 0;
+
+    function logEvent(text, type = 'info') {
+      const consoleEl = document.getElementById('eventConsole');
+      const time = new Date().toISOString().substring(11, 19);
+      let colorClass = 'text-slate-300';
+      if (type === 'success') colorClass = 'text-emerald-400';
+      if (type === 'warn') colorClass = 'text-amber-400';
+      if (type === 'error') colorClass = 'text-rose-400';
+      if (type === 'comp') colorClass = 'text-violet-400';
+
+      const entry = document.createElement('div');
+      entry.className = `${colorClass} leading-relaxed`;
+      entry.innerHTML = `<span class="text-slate-600">[${time}]</span> ${text}`;
+      consoleEl.appendChild(entry);
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+
+      eventCount++;
+      document.getElementById('logCounter').innerText = `(${eventCount} events)`;
+    }
+
+    function clearLogs() {
+      document.getElementById('eventConsole').innerHTML = '';
+      eventCount = 0;
+      document.getElementById('logCounter').innerText = '(0 events)';
+    }
+
+    function updateBadge(elId, state) {
+      const el = document.getElementById(elId);
+      el.className = `text-[10px] font-mono px-2 py-0.5 rounded border ${STATE_COLORS[state] || STATE_COLORS.PENDING}`;
+      el.innerText = state;
+    }
+
+    function updateNodeBorder(nodeId, state) {
+      const el = document.getElementById(nodeId);
+      el.classList.remove('border-emerald-600', 'border-rose-600', 'border-violet-600', 'border-blue-600', 'border-amber-600');
+      if (state === 'CONFIRMED') el.classList.add('border-emerald-600');
+      else if (state === 'FAILED' || state === 'COMPENSATION_FAILED') el.classList.add('border-rose-600');
+      else if (state === 'COMPENSATED') el.classList.add('border-violet-600');
+      else if (state === 'EXECUTING') el.classList.add('border-blue-600');
+      else if (state === 'COMPENSATING') el.classList.add('border-amber-600');
+    }
+
+    function resetPipeline() {
+      ['Step1', 'Step2', 'Step3'].forEach(id => {
+        updateBadge(`badge${id}`, 'PENDING');
+        updateNodeBorder(`node${id}`, 'PENDING');
+        document.getElementById(`att${id}`).innerText = '0';
+        document.getElementById(`tx${id}`).innerText = 'None';
+        document.getElementById(`compInfo${id}`).classList.add('hidden');
+      });
+      document.getElementById('badgeSagaStatus').className = 'font-mono px-2.5 py-0.5 rounded text-xs bg-slate-800 text-slate-300 border border-slate-700';
+      document.getElementById('badgeSagaStatus').innerText = 'INITIALIZED';
+      document.getElementById('statGasUsed').innerText = '0';
+      logEvent('Pipeline reset to INITIALIZED state.');
+    }
+
+    async function runScenario(mode) {
+      resetPipeline();
+      const transient = document.getElementById('chkTransientRetries').checked ? 1 : 0;
+
+      let payload = {
+        saga_id: `web_${mode}_${Date.now()}`,
+        transient_retries: transient,
+        force_fail_step: null,
+        fail_compensation: false
+      };
+
+      if (mode === 'happy') {
+        payload.force_fail_step = null;
+        logEvent('=== LAUNCHING SCENARIO A: HAPPY PATH (3/3 STEPS) ===', 'info');
+      } else if (mode === 'forced3') {
+        payload.force_fail_step = 3;
+        logEvent('=== LAUNCHING SCENARIO B: FORCED STEP 3 FAILURE (LIFO ROLLBACK) ===', 'warn');
+      } else if (mode === 'forced2') {
+        payload.force_fail_step = 2;
+        logEvent('=== LAUNCHING SCENARIO C: FORCED STEP 2 FAILURE ===', 'warn');
+      } else if (mode === 'comp_fail') {
+        payload.force_fail_step = 3;
+        payload.fail_compensation = true;
+        logEvent('=== LAUNCHING SCENARIO D: COMPENSATION FAILURE DEMO ===', 'error');
+      }
+
+      // Try invoking local server API, fallback to client simulation if file:// opened
+      try {
+        const resp = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (resp.ok) {
+          const logData = await resp.json();
+          renderExecutionLog(logData);
+          return;
+        }
+      } catch (err) {
+        // Fallback to client-side deterministic simulation
+        logEvent('Local server offline; executing via client-side deterministic simulation engine.', 'info');
+      }
+
+      runClientSideSimulation(payload);
+    }
+
+    function renderExecutionLog(log) {
+      document.getElementById('badgeSagaStatus').innerText = log.status;
+      document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS[log.status]}`;
+      document.getElementById('statGasUsed').innerText = log.total_gas_used.toLocaleString();
+
+      log.state_history.forEach(ev => {
+        let type = 'info';
+        if (ev.to_state.includes('CONFIRMED') || ev.to_state === 'COMPLETED') type = 'success';
+        if (ev.to_state.includes('FAILED') || ev.to_state.includes('MANUAL')) type = 'error';
+        if (ev.to_state.includes('COMPENSATED') || ev.to_state === 'ROLLED_BACK') type = 'comp';
+        logEvent(`[${ev.from_state} &rarr; ${ev.to_state}] (Attempt ${ev.attempt}) &bull; ${ev.reason || ''}`, type);
+      });
+
+      log.steps.forEach(s => {
+        const stepNum = s.order;
+        updateBadge(`badgeStep${stepNum}`, s.status);
+        updateNodeBorder(`nodeStep${stepNum}`, s.status);
+        document.getElementById(`attStep${stepNum}`).innerText = s.attempts;
+        const tx = s.tx_hash || (s.receipt ? s.receipt.tx_hash : 'None');
+        document.getElementById(`txStep${stepNum}`).innerText = tx ? tx.substring(0, 14) + '...' : 'None';
+        if (s.status === 'COMPENSATED') {
+          document.getElementById(`compInfo${stepNum}`).classList.remove('hidden');
+        }
+      });
+    }
+
+    async function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function runClientSideSimulation(payload) {
+      document.getElementById('badgeSagaStatus').innerText = 'EXECUTING';
+      document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.EXECUTING}`;
+
+      let gas = 0;
+      let completedSteps = [];
+
+      // Step 1
+      updateBadge('badgeStep1', 'EXECUTING');
+      updateNodeBorder('nodeStep1', 'EXECUTING');
+      document.getElementById('attStep1').innerText = '1';
+      logEvent('Step 1 (Approve): Submitting ERC20_APPROVE transaction to Atlantic RPC...');
+      await sleep(500);
+
+      if (payload.transient_retries > 0 && payload.force_fail_step !== 1) {
+        updateBadge('badgeStep1', 'RETRIED');
+        logEvent('Step 1 (Approve): Transient 503 error encountered. Performing backoff retry...', 'warn');
+        await sleep(500);
+        document.getElementById('attStep1').innerText = '2';
+      }
+
+      if (payload.force_fail_step === 1) {
+        updateBadge('badgeStep1', 'FAILED');
+        updateNodeBorder('nodeStep1', 'FAILED');
+        logEvent('Step 1 (Approve): Contract reverted. Halting.', 'error');
+        document.getElementById('badgeSagaStatus').innerText = 'ROLLED_BACK';
+        return;
+      }
+
+      gas += 45000;
+      const tx1 = '0xsim_' + Math.random().toString(16).substring(2, 14);
+      document.getElementById('txStep1').innerText = tx1;
+      updateBadge('badgeStep1', 'CONFIRMED');
+      updateNodeBorder('nodeStep1', 'CONFIRMED');
+      document.getElementById('statGasUsed').innerText = gas.toLocaleString();
+      logEvent(`Step 1 (Approve): Receipt verified on block #31569442. Hash: ${tx1} (45,000 gas)`, 'success');
+      completedSteps.push(1);
+      await sleep(600);
+
+      // Step 2
+      updateBadge('badgeStep2', 'EXECUTING');
+      updateNodeBorder('nodeStep2', 'EXECUTING');
+      document.getElementById('attStep2').innerText = '1';
+      logEvent('Step 2 (Swap): Submitting SWAP_EXACT_TOKENS to router...');
+      await sleep(500);
+
+      if (payload.force_fail_step === 2) {
+        updateBadge('badgeStep2', 'FAILED');
+        updateNodeBorder('nodeStep2', 'FAILED');
+        logEvent('Step 2 (Swap): Slippage limit exceeded. Permanent revert!', 'error');
+        await rollback(completedSteps, payload.fail_compensation);
+        return;
+      }
+
+      gas += 115000;
+      const tx2 = '0xsim_' + Math.random().toString(16).substring(2, 14);
+      document.getElementById('txStep2').innerText = tx2;
+      updateBadge('badgeStep2', 'CONFIRMED');
+      updateNodeBorder('nodeStep2', 'CONFIRMED');
+      document.getElementById('statGasUsed').innerText = gas.toLocaleString();
+      logEvent(`Step 2 (Swap): Receipt verified on block #31569443. Hash: ${tx2} (115,000 gas)`, 'success');
+      completedSteps.push(2);
+      await sleep(600);
+
+      // Step 3
+      updateBadge('badgeStep3', 'EXECUTING');
+      updateNodeBorder('nodeStep3', 'EXECUTING');
+      document.getElementById('attStep3').innerText = '1';
+      logEvent('Step 3 (Deposit): Submitting VAULT_DEPOSIT to Atlantic vault...');
+      await sleep(500);
+
+      if (payload.force_fail_step === 3) {
+        updateBadge('badgeStep3', 'FAILED');
+        updateNodeBorder('nodeStep3', 'FAILED');
+        logEvent('Step 3 (Deposit): VAULT_CAP_EXCEEDED. Permanent revert!', 'error');
+        await rollback(completedSteps, payload.fail_compensation);
+        return;
+      }
+
+      gas += 85000;
+      const tx3 = '0xsim_' + Math.random().toString(16).substring(2, 14);
+      document.getElementById('txStep3').innerText = tx3;
+      updateBadge('badgeStep3', 'CONFIRMED');
+      updateNodeBorder('nodeStep3', 'CONFIRMED');
+      document.getElementById('statGasUsed').innerText = gas.toLocaleString();
+      logEvent(`Step 3 (Deposit): Receipt verified on block #31569444. Hash: ${tx3} (85,000 gas)`, 'success');
+
+      document.getElementById('badgeSagaStatus').innerText = 'COMPLETED';
+      document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.COMPLETED}`;
+      logEvent('=== SAGA COMPLETED: All 3 dependent transactions confirmed ===', 'success');
+    }
+
+    async function rollback(completedSteps, failComp) {
+      document.getElementById('badgeSagaStatus').innerText = 'COMPENSATING';
+      document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.COMPENSATING}`;
+      logEvent('Triggering reverse LIFO compensation rollback...', 'warn');
+      await sleep(500);
+
+      const reversed = [...completedSteps].reverse();
+      for (const stepNum of reversed) {
+        updateBadge(`badgeStep${stepNum}`, 'COMPENSATING');
+        updateNodeBorder(`nodeStep${stepNum}`, 'COMPENSATING');
+        logEvent(`Unwinding Step ${stepNum}...`, 'warn');
+        await sleep(500);
+
+        if (failComp && stepNum === 2) {
+          updateBadge(`badgeStep${stepNum}`, 'COMPENSATION_FAILED');
+          updateNodeBorder(`nodeStep${stepNum}`, 'COMPENSATION_FAILED');
+          logEvent(`CRITICAL: Compensation for Step ${stepNum} failed!`, 'error');
+          document.getElementById('badgeSagaStatus').innerText = 'MANUAL_RECOVERY_REQUIRED';
+          document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.MANUAL_RECOVERY_REQUIRED}`;
+          logEvent('EMERGENCY SNAPSHOT DUMPED: Halting to preserve stranded assets.', 'error');
+          return;
+        }
+
+        updateBadge(`badgeStep${stepNum}`, 'COMPENSATED');
+        updateNodeBorder(`nodeStep${stepNum}`, 'COMPENSATED');
+        document.getElementById(`compInfo${stepNum}`).classList.remove('hidden');
+        logEvent(`Step ${stepNum} compensated successfully in reverse order.`, 'comp');
+      }
+
+      document.getElementById('badgeSagaStatus').innerText = 'ROLLED_BACK';
+      document.getElementById('badgeSagaStatus').className = `font-mono px-2.5 py-0.5 rounded text-xs border ${STATE_COLORS.ROLLED_BACK}`;
+      logEvent('=== SAGA ROLLED_BACK: All prior states safely unwound. Zero stranded capital. ===', 'comp');
+    }
+  </script>
+</body>
+</html>

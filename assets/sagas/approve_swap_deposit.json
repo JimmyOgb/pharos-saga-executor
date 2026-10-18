@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "saga_id": "approve_swap_deposit_v1",
+  "title": "Pharos 3-Step DeFi Pipeline (Approve -> Swap -> Deposit)",
+  "description": "Sequential dependent execution pipeline with receipt verification barriers, bounded exponential backoff retries, and reverse LIFO compensation rollback on failure.",
+  "network": "atlantic",
+  "chain_id": 688689,
+  "retry_policy": {
+    "max_retries": 3,
+    "base_delay_seconds": 0.5,
+    "backoff_factor": 2.0,
+    "max_delay_seconds": 5.0,
+    "jitter": true,
+    "retryable_error_codes": [
+      "TIMEOUT",
+      "NETWORK_ERROR",
+      "RATE_LIMIT_429",
+      "SERVER_ERROR_503",
+      "NONCE_TOO_LOW",
+      "GAS_SPIKE_TRANSIENT"
+    ]
+  },
+  "steps": [
+    {
+      "step_id": "step_1_approve",
+      "order": 1,
+      "name": "Approve Token Allowance",
+      "action": "ERC20_APPROVE",
+      "contract": "0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B",
+      "spender": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "amount": "1000000000",
+      "token_symbol": "USDC",
+      "token_decimals": 6,
+      "requires": [],
+      "compensation": {
+        "action": "ERC20_REVOKE_APPROVAL",
+        "description": "Reset token allowance to 0 for spender to safeguard funds.",
+        "contract": "0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B",
+        "spender": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "amount": "0"
+      }
+    },
+    {
+      "step_id": "step_2_swap",
+      "order": 2,
+      "name": "Execute Token Swap",
+      "action": "SWAP_EXACT_TOKENS",
+      "contract": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "token_in": "0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B",
+      "token_out": "0x838800b758277CC111B2d48Ab01e5E164f8E9471",
+      "amount_in": "1000000000",
+      "min_amount_out": "500000000000000000",
+      "requires": ["step_1_approve"],
+      "compensation": {
+        "action": "UNWIND_SWAP",
+        "description": "Swap output token back to original input token to recover principal.",
+        "contract": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "token_in": "0x838800b758277CC111B2d48Ab01e5E164f8E9471",
+        "token_out": "0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B"
+      }
+    },
+    {
+      "step_id": "step_3_deposit",
+      "order": 3,
+      "name": "Deposit into Vault",
+      "action": "VAULT_DEPOSIT",
+      "contract": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "token": "0x838800b758277CC111B2d48Ab01e5E164f8E9471",
+      "amount": "500000000000000000",
+      "requires": ["step_2_swap"],
+      "compensation": {
+        "action": "VAULT_WITHDRAW",
+        "description": "Redeem vault shares back to holder wallet if post-deposit step fails.",
+        "contract": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+      }
+    }
+  ]
+}
