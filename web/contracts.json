@@ -1,0 +1,15 @@
+{
+  "network": "atlantic",
+  "chainId": 688689,
+  "rpcUrl": "https://atlantic.dplabs-internal.com",
+  "contracts": {
+    "tka": "0x6396f75c03bbc44503f9c155e834dda30c947036",
+    "tkb": "0xf37815a784c5a97b7319ecb89a8f0e34aafd472a",
+    "amm": "0x5302b3cc1d7741dc6bf506349a51355e10b9de1d",
+    "vault": "0x41040230bce1bb36248fb799d968f6fa087606e0"
+  },
+  "tka": "0x6396f75c03bbc44503f9c155e834dda30c947036",
+  "tkb": "0xf37815a784c5a97b7319ecb89a8f0e34aafd472a",
+  "amm": "0x5302b3cc1d7741dc6bf506349a51355e10b9de1d",
+  "vault": "0x41040230bce1bb36248fb799d968f6fa087606e0"
+}

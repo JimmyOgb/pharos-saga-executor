@@ -377,6 +377,17 @@ saga_js_block = """
     const VAULT_DEPOSIT_SEL = '0xb6b55f25';      // deposit(uint256)
     const VAULT_FAIL_DEPOSIT_SEL = '0xea65d693'; // depositWithFailFlag(uint256,bool)
     const VAULT_USER_SHARES_SEL = '0xde69b3aa';  // userShares(address)
+    const AMM_TOKEN_A_SEL = '0x0fc63d10';        // tokenA()
+    const AMM_TOKEN_B_SEL = '0x5f64b55b';        // tokenB()
+    const VAULT_ASSET_SEL = '0x38d52e0f';        // asset()
+
+    // Default Atlantic deployment configuration fallback for fresh browser sessions
+    const DEFAULT_ATLANTIC_DEPLOYMENT = {
+      tka: '0x6396f75c03bbc44503f9c155e834dda30c947036',
+      tkb: '0xf37815a784c5a97b7319ecb89a8f0e34aafd472a',
+      amm: '0x5302b3cc1d7741dc6bf506349a51355e10b9de1d',
+      vault: '0x41040230bce1bb36248fb799d968f6fa087606e0'
+    };
 
     function isValidEthAddress(addr) {
       return typeof addr === 'string' && /^0x[0-9a-fA-F]{40}$/.test(addr.trim());
@@ -397,6 +408,45 @@ saga_js_block = """
       if (el) el.classList.toggle('hidden');
     }
 
+    async function resolveCandidateDeployment() {
+      // Tier 1: User custom configuration override via localStorage
+      const raw = localStorage.getItem('pharos_saga_deployed');
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          const c = (parsed && parsed.contracts) ? parsed.contracts : parsed;
+          if (c && c.tka && c.tkb && c.amm && c.vault) {
+            return {
+              tka: c.tka.trim(),
+              tkb: c.tkb.trim(),
+              amm: c.amm.trim(),
+              vault: c.vault.trim()
+            };
+          }
+        } catch (e) {}
+      }
+
+      // Tier 2: Public contracts.json registry (Vercel static asset)
+      try {
+        const resp = await fetch('contracts.json');
+        if (resp.ok) {
+          const cfg = await resp.json();
+          const c = (cfg && cfg.contracts) ? cfg.contracts : cfg;
+          if (c && c.tka && c.tkb && c.amm && c.vault) {
+            return {
+              tka: c.tka.trim(),
+              tkb: c.tkb.trim(),
+              amm: c.amm.trim(),
+              vault: c.vault.trim()
+            };
+          }
+        }
+      } catch (e) {}
+
+      // Tier 3: Embedded Atlantic testnet deployment fallback
+      return { ...DEFAULT_ATLANTIC_DEPLOYMENT };
+    }
+
     async function loadAndVerifyDeployedContracts() {
       const badge = document.getElementById('badgeContractsStatus');
       const alertText = document.getElementById('contractsAlertText');
@@ -409,88 +459,160 @@ saga_js_block = """
       badge.innerText = 'VERIFYING CODE...';
       alertText.classList.add('hidden');
 
-      let saved = null;
-      const raw = localStorage.getItem('pharos_saga_deployed');
-      if (raw) {
-        try { saved = JSON.parse(raw); } catch (e) {}
-      }
-
-      if (!saved || !saved.tka || !saved.tkb || !saved.amm || !saved.vault) {
+      function failVerification(reason, badgeText = 'VERIFICATION FAILED') {
         contractsVerified = false;
         deployedContracts = { tka: '', tkb: '', amm: '', vault: '' };
         badge.className = 'text-[10px] font-mono px-2.5 py-1 rounded-full bg-rose-950 text-rose-300 border border-rose-800';
-        badge.innerText = 'UNCONFIGURED';
-        alertText.innerText = 'No deployed contract configuration found. Deploy via deploy.html or set verified addresses.';
+        badge.innerText = badgeText;
+        alertText.innerText = reason;
         alertText.classList.remove('hidden');
         if (blockedBanner) blockedBanner.classList.remove('hidden');
         if (btnStep1) {
           btnStep1.disabled = true;
           btnStep1.className = 'w-full py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-500 cursor-not-allowed transition';
         }
-        if (btnFaucet) btnFaucet.disabled = true;
-        if (btnSeed) btnSeed.disabled = true;
-        updateContractAddressDisplay();
-        return false;
-      }
-
-      // Concurrently verify all 4 contracts on Atlantic RPC
-      const [hasCodeA, hasCodeB, hasCodeAmm, hasCodeVault] = await Promise.all([
-        verifyContractCodeOnAtlantic(saved.tka),
-        verifyContractCodeOnAtlantic(saved.tkb),
-        verifyContractCodeOnAtlantic(saved.amm),
-        verifyContractCodeOnAtlantic(saved.vault)
-      ]);
-
-      const allValid = hasCodeA && hasCodeB && hasCodeAmm && hasCodeVault;
-
-      if (allValid) {
-        deployedContracts = {
-          tka: saved.tka.trim(),
-          tkb: saved.tkb.trim(),
-          amm: saved.amm.trim(),
-          vault: saved.vault.trim()
-        };
-        contractsVerified = true;
-        badge.className = 'text-[10px] font-mono px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700';
-        badge.innerText = 'VERIFIED ON ATLANTIC';
-        alertText.classList.add('hidden');
-        if (blockedBanner) blockedBanner.classList.add('hidden');
-
-        // Populate form inputs
-        document.getElementById('inputAddrTKA').value = deployedContracts.tka;
-        document.getElementById('inputAddrTKB').value = deployedContracts.tkb;
-        document.getElementById('inputAddrAMM').value = deployedContracts.amm;
-        document.getElementById('inputAddrVault').value = deployedContracts.vault;
-
-        updateContractAddressDisplay(true);
-
-        if (btnStep1) {
-          btnStep1.disabled = false;
-          btnStep1.className = 'w-full py-2 rounded-xl text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black shadow transition';
-        }
         if (btnFaucet) {
-          btnFaucet.disabled = false;
-          btnFaucet.className = 'px-3 py-1.5 rounded-lg bg-cyan-950 text-cyan-300 hover:bg-cyan-900 border border-cyan-800 transition cursor-pointer';
+          btnFaucet.disabled = true;
+          btnFaucet.className = 'px-3 py-1.5 rounded-lg bg-slate-800 text-slate-500 cursor-not-allowed transition';
         }
         if (btnSeed) {
-          btnSeed.disabled = false;
-          btnSeed.className = 'px-3 py-1.5 rounded-lg bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 transition cursor-pointer';
+          btnSeed.disabled = true;
+          btnSeed.className = 'px-3 py-1.5 rounded-lg bg-slate-800 text-slate-500 cursor-not-allowed transition';
         }
-
-        logEvent('Verified 4/4 contract addresses on Pharos Atlantic with confirmed runtime code.', 'success');
+        updateContractAddressDisplay(false);
         refreshPoolLiquidity();
-        if (currentAccount) refreshUserTokenBalances();
-        return true;
-      } else {
-        contractsVerified = false;
-        badge.className = 'text-[10px] font-mono px-2.5 py-1 rounded-full bg-rose-950 text-rose-300 border border-rose-800';
-        badge.innerText = 'EMPTY CODE ON-CHAIN';
-        alertText.innerText = 'One or more contract addresses contain empty bytecode on Atlantic. Ensure contracts were deployed on Atlantic (688689).';
-        alertText.classList.remove('hidden');
-        if (blockedBanner) blockedBanner.classList.remove('hidden');
-        updateContractAddressDisplay();
+        refreshUserTokenBalances();
+        logEvent(`Contract verification failed: ${reason}`, 'error');
         return false;
       }
+
+      const candidate = await resolveCandidateDeployment();
+
+      if (!candidate || !candidate.tka || !candidate.tkb || !candidate.amm || !candidate.vault) {
+        return failVerification('No deployed contract configuration found. Set verified addresses via configuration panel.', 'UNCONFIGURED');
+      }
+
+      // Check valid Ethereum hex addresses
+      for (const [key, addr] of Object.entries(candidate)) {
+        if (!isValidEthAddress(addr)) {
+          return failVerification(`Invalid Ethereum hex address for ${key.toUpperCase()}: "${addr}". Expected 42-char 0x hex format.`, 'INVALID FORMAT');
+        }
+      }
+
+      // Populate form inputs
+      const inA = document.getElementById('inputAddrTKA');
+      const inB = document.getElementById('inputAddrTKB');
+      const inAMM = document.getElementById('inputAddrAMM');
+      const inVault = document.getElementById('inputAddrVault');
+      if (inA) inA.value = candidate.tka;
+      if (inB) inB.value = candidate.tkb;
+      if (inAMM) inAMM.value = candidate.amm;
+      if (inVault) inVault.value = candidate.vault;
+
+      // Fail-closed Check 1: Chain ID validation on Atlantic RPC
+      let chainIdHex;
+      try {
+        chainIdHex = await rpcCall('eth_chainId', []);
+      } catch (err) {
+        return failVerification(`RPC connection failed when checking chain ID: ${err.message}`, 'RPC ERROR');
+      }
+      if (chainIdHex !== ATLANTIC_CHAIN_ID_HEX && parseInt(chainIdHex, 16) !== ATLANTIC_CHAIN_ID_INT) {
+        return failVerification(`Chain ID mismatch: RPC returned ${chainIdHex}, expected ${ATLANTIC_CHAIN_ID_HEX} (${ATLANTIC_CHAIN_ID_INT}).`, 'CHAIN MISMATCH');
+      }
+
+      // Fail-closed Check 2: Bytecode verification on Atlantic RPC
+      let bytecodes;
+      try {
+        bytecodes = await Promise.all([
+          rpcCall('eth_getCode', [candidate.tka, 'latest']),
+          rpcCall('eth_getCode', [candidate.tkb, 'latest']),
+          rpcCall('eth_getCode', [candidate.amm, 'latest']),
+          rpcCall('eth_getCode', [candidate.vault, 'latest'])
+        ]);
+      } catch (err) {
+        return failVerification(`RPC call failed while querying bytecode: ${err.message}`, 'RPC ERROR');
+      }
+
+      const names = ['TKA', 'TKB', 'TestAMM', 'TestSagaVault'];
+      const emptyContracts = [];
+      bytecodes.forEach((code, idx) => {
+        if (!code || code === '0x' || code === '0x0' || code.length <= 10) {
+          emptyContracts.push(names[idx]);
+        }
+      });
+
+      if (emptyContracts.length > 0) {
+        return failVerification(`Contract bytecode empty or missing on Atlantic for: ${emptyContracts.join(', ')}. Ensure contracts are deployed to Atlantic (chain 688689).`, 'EMPTY CODE ON-CHAIN');
+      }
+
+      // Fail-closed Check 3: Relationship verification (TestAMM tokenA/tokenB and TestSagaVault asset)
+      let ammTokenAHex, ammTokenBHex, vaultAssetHex;
+      try {
+        [ammTokenAHex, ammTokenBHex, vaultAssetHex] = await Promise.all([
+          rpcCall('eth_call', [{ to: candidate.amm, data: AMM_TOKEN_A_SEL }, 'latest']),
+          rpcCall('eth_call', [{ to: candidate.amm, data: AMM_TOKEN_B_SEL }, 'latest']),
+          rpcCall('eth_call', [{ to: candidate.vault, data: VAULT_ASSET_SEL }, 'latest'])
+        ]);
+      } catch (err) {
+        return failVerification(`Relationship verification call failed: ${err.message}`, 'RELATIONSHIP ERROR');
+      }
+
+      const cleanAddr = (res) => (res && res.length >= 42) ? ('0x' + res.slice(-40)).toLowerCase() : '';
+      const onchainAmmTokenA = cleanAddr(ammTokenAHex);
+      const onchainAmmTokenB = cleanAddr(ammTokenBHex);
+      const onchainVaultAsset = cleanAddr(vaultAssetHex);
+
+      if (onchainAmmTokenA !== candidate.tka.toLowerCase()) {
+        return failVerification(`AMM tokenA() mismatch: on-chain returns ${onchainAmmTokenA}, expected TKA ${candidate.tka.toLowerCase()}`, 'RELATIONSHIP MISMATCH');
+      }
+      if (onchainAmmTokenB !== candidate.tkb.toLowerCase()) {
+        return failVerification(`AMM tokenB() mismatch: on-chain returns ${onchainAmmTokenB}, expected TKB ${candidate.tkb.toLowerCase()}`, 'RELATIONSHIP MISMATCH');
+      }
+      if (onchainVaultAsset !== candidate.tkb.toLowerCase()) {
+        return failVerification(`Vault asset() mismatch: on-chain returns ${onchainVaultAsset}, expected TKB ${candidate.tkb.toLowerCase()}`, 'RELATIONSHIP MISMATCH');
+      }
+
+      // All checks passed!
+      deployedContracts = {
+        tka: candidate.tka,
+        tkb: candidate.tkb,
+        amm: candidate.amm,
+        vault: candidate.vault
+      };
+      contractsVerified = true;
+      badge.className = 'text-[10px] font-mono px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700';
+      badge.innerText = 'VERIFIED ON ATLANTIC';
+      alertText.classList.add('hidden');
+      if (blockedBanner) blockedBanner.classList.add('hidden');
+
+      updateContractAddressDisplay(true);
+
+      if (btnStep1) {
+        btnStep1.disabled = false;
+        btnStep1.className = 'w-full py-2 rounded-xl text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black shadow transition';
+      }
+      if (btnFaucet) {
+        btnFaucet.disabled = false;
+        btnFaucet.className = 'px-3 py-1.5 rounded-lg bg-cyan-950 text-cyan-300 hover:bg-cyan-900 border border-cyan-800 transition cursor-pointer';
+      }
+      if (btnSeed) {
+        btnSeed.disabled = false;
+        btnSeed.className = 'px-3 py-1.5 rounded-lg bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 transition cursor-pointer';
+      }
+
+      logEvent('Verified 4/4 contract addresses on Pharos Atlantic with confirmed runtime code and verified AMM/Vault token bindings.', 'success');
+      await refreshPoolLiquidity();
+      if (currentAccount) {
+        await refreshUserTokenBalances();
+      } else {
+        const elTka = document.getElementById('dispUserTKA');
+        const elTkb = document.getElementById('dispUserTKB');
+        const elShares = document.getElementById('dispUserShares');
+        if (elTka) elTka.innerText = '-- TKA (Disconnected)';
+        if (elTkb) elTkb.innerText = '-- TKB (Disconnected)';
+        if (elShares) elShares.innerText = '-- SHARES (Disconnected)';
+      }
+      return true;
     }
 
     function updateContractAddressDisplay(allOk = false) {
@@ -539,102 +661,146 @@ saga_js_block = """
         toggleCustomAddressForm();
         logEvent('Custom contract addresses verified and saved to browser session.', 'success');
       } else {
-        alert('Contract verification failed: One or more addresses contain empty bytecode on Atlantic Testnet.');
+        alert('Contract verification failed: One or more addresses failed on-chain verification or relationship checks.');
       }
     }
 
     async function queryTokenBalance(tokenAddr, account) {
       if (!isValidEthAddress(tokenAddr) || !isValidEthAddress(account)) return 0n;
-      try {
-        const calldata = ERC20_BALANCE_SEL + padAddress(account);
-        const resHex = await rpcCall('eth_call', [{ to: tokenAddr, data: calldata }, 'latest']);
-        return BigInt(resHex || '0x0');
-      } catch (err) {
-        return 0n;
-      }
+      const calldata = ERC20_BALANCE_SEL + padAddress(account);
+      const resHex = await rpcCall('eth_call', [{ to: tokenAddr, data: calldata }, 'latest']);
+      return BigInt(resHex || '0x0');
     }
 
     async function queryAllowance(tokenAddr, owner, spender) {
       if (!isValidEthAddress(tokenAddr) || !isValidEthAddress(owner) || !isValidEthAddress(spender)) return 0n;
-      try {
-        const calldata = ERC20_ALLOWANCE_SEL + padAddress(owner) + padAddress(spender);
-        const resHex = await rpcCall('eth_call', [{ to: tokenAddr, data: calldata }, 'latest']);
-        return BigInt(resHex || '0x0');
-      } catch (err) {
-        return 0n;
-      }
+      const calldata = ERC20_ALLOWANCE_SEL + padAddress(owner) + padAddress(spender);
+      const resHex = await rpcCall('eth_call', [{ to: tokenAddr, data: calldata }, 'latest']);
+      return BigInt(resHex || '0x0');
     }
 
     async function queryVaultShares(vaultAddr, account) {
       if (!isValidEthAddress(vaultAddr) || !isValidEthAddress(account)) return 0n;
-      try {
-        const calldata = VAULT_USER_SHARES_SEL + padAddress(account);
-        const resHex = await rpcCall('eth_call', [{ to: vaultAddr, data: calldata }, 'latest']);
-        return BigInt(resHex || '0x0');
-      } catch (err) {
-        return 0n;
-      }
+      const calldata = VAULT_USER_SHARES_SEL + padAddress(account);
+      const resHex = await rpcCall('eth_call', [{ to: vaultAddr, data: calldata }, 'latest']);
+      return BigInt(resHex || '0x0');
     }
 
     async function refreshPoolLiquidity() {
-      if (!contractsVerified || !deployedContracts.amm || !deployedContracts.tka || !deployedContracts.tkb) return;
-
-      const [balA, balB] = await Promise.all([
-        queryTokenBalance(deployedContracts.tka, deployedContracts.amm),
-        queryTokenBalance(deployedContracts.tkb, deployedContracts.amm)
-      ]);
-
-      poolReserves = { tka: balA, tkb: balB };
-
-      document.getElementById('dispPoolTKA').innerText = `${formatEther(balA)} TKA`;
-      document.getElementById('dispPoolTKB').innerText = `${formatEther(balB)} TKB`;
-
       const badge = document.getElementById('badgePoolStatus');
-      const minReserve = 100n * 10n**18n; // At least 100 tokens
-      if (balA >= minReserve && balB >= minReserve) {
-        badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700';
-        badge.innerText = 'LIQUIDITY READY';
-        document.getElementById('liquidityAlertText').innerText = 'AMM pool has sufficient reserves for swaps and compensation unwinds.';
-      } else {
-        badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700';
-        badge.innerText = 'LOW / UNSEEDED';
-        document.getElementById('liquidityAlertText').innerText = 'Pool reserves low. Use Seed AMM Pool before executing saga.';
+      const elA = document.getElementById('dispPoolTKA');
+      const elB = document.getElementById('dispPoolTKB');
+      const alertEl = document.getElementById('liquidityAlertText');
+
+      if (!contractsVerified || !deployedContracts.amm || !deployedContracts.tka || !deployedContracts.tkb) {
+        if (badge) {
+          badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700';
+          badge.innerText = 'UNCONFIGURED';
+        }
+        if (elA) elA.innerText = '-- TKA';
+        if (elB) elB.innerText = '-- TKB';
+        if (alertEl) alertEl.innerText = 'Contract addresses unconfigured or unverified. Verify infrastructure to view reserves.';
+        return;
+      }
+
+      if (badge) {
+        badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300 border border-slate-700';
+        badge.innerText = 'READING...';
+      }
+
+      try {
+        const [balA, balB] = await Promise.all([
+          queryTokenBalance(deployedContracts.tka, deployedContracts.amm),
+          queryTokenBalance(deployedContracts.tkb, deployedContracts.amm)
+        ]);
+
+        poolReserves = { tka: balA, tkb: balB };
+
+        if (elA) elA.innerText = `${formatEther(balA)} TKA`;
+        if (elB) elB.innerText = `${formatEther(balB)} TKB`;
+
+        const minReserve = 100n * 10n**18n; // At least 100 tokens
+        if (balA >= minReserve && balB >= minReserve) {
+          if (badge) {
+            badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700';
+            badge.innerText = 'LIQUIDITY READY';
+          }
+          if (alertEl) alertEl.innerText = 'AMM pool has sufficient reserves for swaps and compensation unwinds.';
+        } else if (balA === 0n && balB === 0n) {
+          if (badge) {
+            badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800';
+            badge.innerText = 'ZERO RESERVES';
+          }
+          if (alertEl) alertEl.innerText = 'AMM pool reserves are zero. Use Seed AMM Pool before executing saga.';
+        } else {
+          if (badge) {
+            badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700';
+            badge.innerText = 'LOW / UNSEEDED';
+          }
+          if (alertEl) alertEl.innerText = 'Pool reserves low. Use Seed AMM Pool before executing saga.';
+        }
+      } catch (err) {
+        if (badge) {
+          badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800';
+          badge.innerText = 'RPC ERROR';
+        }
+        if (elA) elA.innerText = 'ERROR';
+        if (elB) elB.innerText = 'ERROR';
+        if (alertEl) alertEl.innerText = `Failed to read pool reserves: ${err.message}`;
       }
     }
 
     async function refreshUserTokenBalances() {
-      if (!currentAccount || !contractsVerified) return;
-
-      const [balA, balB, shares] = await Promise.all([
-        queryTokenBalance(deployedContracts.tka, currentAccount),
-        queryTokenBalance(deployedContracts.tkb, currentAccount),
-        queryVaultShares(deployedContracts.vault, currentAccount)
-      ]);
-
-      userTokenBalances = { tka: balA, tkb: balB, shares: shares };
-      document.getElementById('dispUserTKA').innerText = `${formatEther(balA)} TKA`;
-      document.getElementById('dispUserTKB').innerText = `${formatEther(balB)} TKB`;
+      const elA = document.getElementById('dispUserTKA');
+      const elB = document.getElementById('dispUserTKB');
       const elShares = document.getElementById('dispUserShares');
-      if (elShares) {
-        elShares.innerText = `${formatEther(shares)} SHARES`;
+
+      if (!currentAccount) {
+        if (elA) elA.innerText = '-- TKA (Disconnected)';
+        if (elB) elB.innerText = '-- TKB (Disconnected)';
+        if (elShares) elShares.innerText = '-- SHARES (Disconnected)';
+        return;
       }
 
-      // On-chain state recovery: if user already holds >= 100 vault shares on Atlantic, record vault position
-      // Safety Rule: A stale or unrelated vault balance must NOT falsely prove earlier steps (Step 1 & Step 2) succeeded!
-      if (shares >= 100n * 10n**18n && activeScenario === 'happy') {
-        const b3 = document.getElementById('badgeStep3');
-        if (b3) {
-          b3.innerText = 'CONFIRMED';
-          b3.className = 'text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300';
+      if (!contractsVerified) {
+        if (elA) elA.innerText = '-- TKA (Unverified)';
+        if (elB) elB.innerText = '-- TKB (Unverified)';
+        if (elShares) elShares.innerText = '-- SHARES (Unverified)';
+        return;
+      }
+
+      try {
+        const [balA, balB, shares] = await Promise.all([
+          queryTokenBalance(deployedContracts.tka, currentAccount),
+          queryTokenBalance(deployedContracts.tkb, currentAccount),
+          queryVaultShares(deployedContracts.vault, currentAccount)
+        ]);
+
+        userTokenBalances = { tka: balA, tkb: balB, shares: shares };
+        if (elA) elA.innerText = `${formatEther(balA)} TKA`;
+        if (elB) elB.innerText = `${formatEther(balB)} TKB`;
+        if (elShares) elShares.innerText = `${formatEther(shares)} SHARES`;
+
+        // Safety: Stale/unrelated vault balance must NOT confirm Step 1 or Step 2
+        if (shares >= 100n * 10n**18n && activeScenario === 'happy') {
+          const b3 = document.getElementById('badgeStep3');
+          if (b3) {
+            b3.innerText = 'CONFIRMED';
+            b3.className = 'text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300';
+          }
+          const c3 = document.getElementById('cardStep3');
+          if (c3) c3.classList.remove('opacity-60');
+          const btn3 = document.getElementById('btnExecuteStep3');
+          if (btn3) {
+            btn3.disabled = false;
+            btn3.className = 'w-full py-2 rounded-xl text-xs font-semibold bg-emerald-900/60 text-emerald-300 border border-emerald-700 transition';
+            btn3.innerText = 'Step 3 Confirmed (100 Shares Minted)';
+          }
         }
-        const c3 = document.getElementById('cardStep3');
-        if (c3) c3.classList.remove('opacity-60');
-        const btn3 = document.getElementById('btnExecuteStep3');
-        if (btn3) {
-          btn3.disabled = false;
-          btn3.className = 'w-full py-2 rounded-xl text-xs font-semibold bg-emerald-900/60 text-emerald-300 border border-emerald-700 transition';
-          btn3.innerText = 'Step 3 Confirmed (100 Shares Minted)';
-        }
+      } catch (err) {
+        if (elA) elA.innerText = 'ERROR';
+        if (elB) elB.innerText = 'ERROR';
+        if (elShares) elShares.innerText = 'ERROR';
       }
     }
 

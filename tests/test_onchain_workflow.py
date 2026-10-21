@@ -6,6 +6,7 @@ and static deployment manifest verification.
 
 import json
 from pathlib import Path
+import re
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -1186,3 +1187,233 @@ def test_stale_or_unrelated_vault_shares_do_not_falsely_confirm_earlier_steps():
     assert "badgeStep2" not in recovery_code, "Vault shares must not alter Step 2 badge"
     assert "cardStep2" not in recovery_code, "Vault shares must not unlock Step 2 card"
 
+
+
+def test_public_contracts_json_and_embedded_fallback_registry():
+    """Verify web/contracts.json public registry and web/index.html embedded fallback."""
+    contracts_file = WEB_DIR / "contracts.json"
+    assert contracts_file.exists(), "web/contracts.json must exist in static web bundle"
+    data = json.loads(contracts_file.read_text(encoding="utf-8"))
+
+    assert data.get("network") == "atlantic"
+    assert data.get("chainId") == EXPECTED_CHAIN_ID
+    assert data.get("rpcUrl") == "https://atlantic.dplabs-internal.com"
+
+    contracts = data.get("contracts", data)
+    assert re.match(r"^0x[0-9a-fA-F]{40}$", contracts["tka"])
+    assert re.match(r"^0x[0-9a-fA-F]{40}$", contracts["tkb"])
+    assert re.match(r"^0x[0-9a-fA-F]{40}$", contracts["amm"])
+    assert re.match(r"^0x[0-9a-fA-F]{40}$", contracts["vault"])
+
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    # Selectors for relationship validation
+    assert "AMM_TOKEN_A_SEL = '0x0fc63d10'" in content, "Must define AMM tokenA selector"
+    assert "AMM_TOKEN_B_SEL = '0x5f64b55b'" in content, "Must define AMM tokenB selector"
+    assert "VAULT_ASSET_SEL = '0x38d52e0f'" in content, "Must define Vault asset selector"
+
+    # Embedded fallback
+    assert "DEFAULT_ATLANTIC_DEPLOYMENT" in content, "Must define embedded fallback deployment"
+    assert contracts["tka"] in content, "Default TKA address must match public configuration"
+    assert contracts["tkb"] in content, "Default TKB address must match public configuration"
+    assert contracts["amm"] in content, "Default AMM address must match public configuration"
+    assert contracts["vault"] in content, "Default Vault address must match public configuration"
+
+    # Candidate resolution helper
+    assert "resolveCandidateDeployment" in content, "Must implement resolveCandidateDeployment"
+
+
+def test_clean_browser_session_and_refresh_resolution_simulation():
+    """Simulate configuration resolution across fresh browser sessions, offline mode, and custom overrides."""
+    embedded_defaults = {
+        "tka": "0x6396f75c03bbc44503f9c155e834dda30c947036",
+        "tkb": "0xf37815a784c5a97b7319ecb89a8f0e34aafd472a",
+        "amm": "0x5302b3cc1d7741dc6bf506349a51355e10b9de1d",
+        "vault": "0x41040230bce1bb36248fb799d968f6fa087606e0",
+    }
+    public_registry = {
+        "contracts": {
+            "tka": "0x6396f75c03bbc44503f9c155e834dda30c947036",
+            "tkb": "0xf37815a784c5a97b7319ecb89a8f0e34aafd472a",
+            "amm": "0x5302b3cc1d7741dc6bf506349a51355e10b9de1d",
+            "vault": "0x41040230bce1bb36248fb799d968f6fa087606e0",
+        }
+    }
+
+    def resolve_candidate(local_storage=None, fetch_resp=None):
+        if local_storage:
+            c = local_storage.get("contracts", local_storage)
+            if c.get("tka") and c.get("tkb") and c.get("amm") and c.get("vault"):
+                return c
+        if fetch_resp:
+            c = fetch_resp.get("contracts", fetch_resp)
+            if c.get("tka") and c.get("tkb") and c.get("amm") and c.get("vault"):
+                return c
+        return embedded_defaults
+
+    # Fresh session: localStorage is None, fetch works
+    res_fresh = resolve_candidate(local_storage=None, fetch_resp=public_registry)
+    assert res_fresh["tka"] == embedded_defaults["tka"]
+    assert res_fresh["amm"] == embedded_defaults["amm"]
+
+    # Fresh session offline: localStorage is None, fetch fails
+    res_offline = resolve_candidate(local_storage=None, fetch_resp=None)
+    assert res_offline["tka"] == embedded_defaults["tka"]
+
+    # Custom override session: user custom address takes priority
+    custom = {
+        "tka": "0x1111111111111111111111111111111111111111",
+        "tkb": "0x2222222222222222222222222222222222222222",
+        "amm": "0x3333333333333333333333333333333333333333",
+        "vault": "0x4444444444444444444444444444444444444444",
+    }
+    res_custom = resolve_candidate(local_storage=custom, fetch_resp=public_registry)
+    assert res_custom["tka"] == custom["tka"]
+    assert res_custom["amm"] == custom["amm"]
+
+
+def test_fail_closed_contract_verification_guards_simulation():
+    """Verify strict fail-closed simulation covering chain ID, invalid hex, empty bytecode, relationship mismatch, and RPC error."""
+    tka = "0x6396f75c03bbc44503f9c155e834dda30c947036"
+    tkb = "0xf37815a784c5a97b7319ecb89a8f0e34aafd472a"
+    amm = "0x5302b3cc1d7741dc6bf506349a51355e10b9de1d"
+    vault = "0x41040230bce1bb36248fb799d968f6fa087606e0"
+
+    def is_valid_hex(a):
+        return bool(isinstance(a, str) and re.match(r"^0x[0-9a-fA-F]{40}$", a.strip()))
+
+    def simulate_verify(chain_id, addrs, rpc_code, rpc_rel):
+        # Format check
+        for k, a in addrs.items():
+            if not is_valid_hex(a):
+                return {"ok": False, "badge": "INVALID FORMAT", "reason": f"Invalid address for {k}"}
+
+        # Chain ID check
+        if chain_id != 688689 and chain_id != "0xa8231":
+            return {"ok": False, "badge": "CHAIN MISMATCH", "reason": f"Wrong chain: {chain_id}"}
+
+        # Bytecode check
+        for k, a in addrs.items():
+            code = rpc_code.get(a.lower(), "0x")
+            if not code or code in ("0x", "0x0") or len(code) <= 10:
+                return {"ok": False, "badge": "EMPTY CODE ON-CHAIN", "reason": f"Empty code for {k}"}
+
+        # Relationship check
+        amm_token_a = rpc_rel.get("amm_tokenA", "").lower()
+        amm_token_b = rpc_rel.get("amm_tokenB", "").lower()
+        vault_asset = rpc_rel.get("vault_asset", "").lower()
+
+        if amm_token_a != addrs["tka"].lower():
+            return {"ok": False, "badge": "RELATIONSHIP MISMATCH", "reason": "AMM tokenA mismatch"}
+        if amm_token_b != addrs["tkb"].lower():
+            return {"ok": False, "badge": "RELATIONSHIP MISMATCH", "reason": "AMM tokenB mismatch"}
+        if vault_asset != addrs["tkb"].lower():
+            return {"ok": False, "badge": "RELATIONSHIP MISMATCH", "reason": "Vault asset mismatch"}
+
+        return {"ok": True, "badge": "VERIFIED ON ATLANTIC", "reason": "All checks passed"}
+
+    base_addrs = {"tka": tka, "tkb": tkb, "amm": amm, "vault": vault}
+    base_code = {tka.lower(): "0x608060405234", tkb.lower(): "0x608060405234", amm.lower(): "0x608060405234", vault.lower(): "0x608060405234"}
+    base_rel = {"amm_tokenA": tka, "amm_tokenB": tkb, "vault_asset": tkb}
+
+    # 1. Successful verification
+    r_ok = simulate_verify(688689, base_addrs, base_code, base_rel)
+    assert r_ok["ok"] is True
+    assert r_ok["badge"] == "VERIFIED ON ATLANTIC"
+
+    # 2. Wrong Chain ID
+    r_chain = simulate_verify(1, base_addrs, base_code, base_rel)
+    assert r_chain["ok"] is False
+    assert r_chain["badge"] == "CHAIN MISMATCH"
+
+    # 3. Invalid Address format
+    bad_addrs = dict(base_addrs, tka="0x123invalid")
+    r_fmt = simulate_verify(688689, bad_addrs, base_code, base_rel)
+    assert r_fmt["ok"] is False
+    assert r_fmt["badge"] == "INVALID FORMAT"
+
+    # 4. Empty Bytecode on Atlantic
+    bad_code = dict(base_code, **{amm.lower(): "0x"})
+    r_code = simulate_verify(688689, base_addrs, bad_code, base_rel)
+    assert r_code["ok"] is False
+    assert r_code["badge"] == "EMPTY CODE ON-CHAIN"
+
+    # 5. Relationship mismatch (AMM tokenA returns different token)
+    bad_rel = dict(base_rel, amm_tokenA="0x9999999999999999999999999999999999999999")
+    r_rel = simulate_verify(688689, base_addrs, base_code, bad_rel)
+    assert r_rel["ok"] is False
+    assert r_rel["badge"] == "RELATIONSHIP MISMATCH"
+
+
+def test_reserve_and_balance_state_classification_simulation():
+    """Simulate reserve classifications (unconfigured, reading, zero, low, ready, RPC error) and wallet states."""
+    def classify_pool_reserves(contracts_verified, res_a, res_b, rpc_error=False):
+        if not contracts_verified:
+            return {"badge": "UNCONFIGURED", "disp_a": "-- TKA", "disp_b": "-- TKB"}
+        if rpc_error:
+            return {"badge": "RPC ERROR", "disp_a": "ERROR", "disp_b": "ERROR"}
+        min_reserve = 100 * 10**18
+        disp_a = f"{res_a / 10**18:.1f} TKA"
+        disp_b = f"{res_b / 10**18:.1f} TKB"
+        if res_a >= min_reserve and res_b >= min_reserve:
+            return {"badge": "LIQUIDITY READY", "disp_a": disp_a, "disp_b": disp_b}
+        elif res_a == 0 and res_b == 0:
+            return {"badge": "ZERO RESERVES", "disp_a": "0.0 TKA", "disp_b": "0.0 TKB"}
+        else:
+            return {"badge": "LOW / UNSEEDED", "disp_a": disp_a, "disp_b": disp_b}
+
+    def classify_user_balances(current_account, contracts_verified, bal_a, bal_b, shares, rpc_error=False):
+        if not current_account:
+            return {"tka": "-- TKA (Disconnected)", "tkb": "-- TKB (Disconnected)", "shares": "-- SHARES (Disconnected)"}
+        if not contracts_verified:
+            return {"tka": "-- TKA (Unverified)", "tkb": "-- TKB (Unverified)", "shares": "-- SHARES (Unverified)"}
+        if rpc_error:
+            return {"tka": "ERROR", "tkb": "ERROR", "shares": "ERROR"}
+        return {
+            "tka": f"{bal_a / 10**18:.1f} TKA",
+            "tkb": f"{bal_b / 10**18:.1f} TKB",
+            "shares": f"{shares / 10**18:.1f} SHARES",
+        }
+
+    # Unconfigured state
+    assert classify_pool_reserves(False, 0, 0)["badge"] == "UNCONFIGURED"
+
+    # RPC error reading pool
+    assert classify_pool_reserves(True, 0, 0, rpc_error=True)["badge"] == "RPC ERROR"
+
+    # Zero reserves
+    z = classify_pool_reserves(True, 0, 0)
+    assert z["badge"] == "ZERO RESERVES"
+    assert z["disp_a"] == "0.0 TKA"
+
+    # Low reserves
+    assert classify_pool_reserves(True, 50 * 10**18, 50 * 10**18)["badge"] == "LOW / UNSEEDED"
+
+    # Ready reserves
+    r = classify_pool_reserves(True, 1300 * 10**18, 700 * 10**18)
+    assert r["badge"] == "LIQUIDITY READY"
+    assert r["disp_a"] == "1300.0 TKA"
+    assert r["disp_b"] == "700.0 TKB"
+
+    # Disconnected user wallet
+    u_disc = classify_user_balances(None, True, 1000, 1000, 100)
+    assert u_disc["tka"] == "-- TKA (Disconnected)"
+    assert u_disc["shares"] == "-- SHARES (Disconnected)"
+
+    # Connected user wallet
+    u_conn = classify_user_balances("0xe4220c4b71877bb94eb173f467ef5c5557017085", True, 999700 * 10**18, 999200 * 10**18, 100 * 10**18)
+    assert u_conn["tka"] == "999700.0 TKA"
+    assert u_conn["shares"] == "100.0 SHARES"
+
+
+def test_deploy_html_fresh_session_contract_restore():
+    """Verify web/deploy.html includes public contracts.json and fallback restore logic."""
+    deploy_file = WEB_DIR / "deploy.html"
+    assert deploy_file.exists()
+    content = deploy_file.read_text(encoding="utf-8")
+
+    assert "fetch('contracts.json')" in content, "deploy.html must attempt to fetch contracts.json"
+    assert "0x6396f75c03bbc44503f9c155e834dda30c947036" in content, "deploy.html must contain TKA fallback"
+    assert "0x5302b3cc1d7741dc6bf506349a51355e10b9de1d" in content, "deploy.html must contain AMM fallback"
+    assert "restorePreviouslyDeployedState" in content

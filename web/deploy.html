@@ -867,10 +867,32 @@
     }
 
     async function restorePreviouslyDeployedState() {
-      const raw = localStorage.getItem('pharos_saga_deployed');
-      if (!raw) return;
+      let raw = localStorage.getItem('pharos_saga_deployed');
+      let saved = null;
+      if (raw) {
+        try { saved = JSON.parse(raw); } catch (e) {}
+      }
+
+      if (!saved || !saved.tka) {
+        try {
+          const resp = await fetch('contracts.json');
+          if (resp.ok) {
+            const cfg = await resp.json();
+            saved = (cfg && cfg.contracts) ? cfg.contracts : cfg;
+          }
+        } catch (e) {}
+      }
+
+      if (!saved || !saved.tka) {
+        saved = {
+          tka: '0x6396f75c03bbc44503f9c155e834dda30c947036',
+          tkb: '0xf37815a784c5a97b7319ecb89a8f0e34aafd472a',
+          amm: '0x5302b3cc1d7741dc6bf506349a51355e10b9de1d',
+          vault: '0x41040230bce1bb36248fb799d968f6fa087606e0'
+        };
+      }
+
       try {
-        const saved = JSON.parse(raw);
         if (!saved) return;
         if (saved.tka && /^0x[0-9a-fA-F]{40}$/.test(saved.tka)) {
           const code = await rpcCall('eth_getCode', [saved.tka, 'latest']);
