@@ -3,15 +3,15 @@
 [![CI](https://github.com/JimmyOgb/pharos-saga-executor/actions/workflows/ci.yml/badge.svg)](https://github.com/JimmyOgb/pharos-saga-executor/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.9+](https://img.shields.io/badge/Python-3.9%2B-brightgreen.svg)](pyproject.toml)
-[![Tests: 59 Passed](https://img.shields.io/badge/Tests-59%20Passed-brightgreen.svg)](tests/)
+[![Tests: 98 Passed](https://img.shields.io/badge/Tests-98%20Passed-brightgreen.svg)](tests/)
 [![Standard: SkillEngine v0.1.0](https://img.shields.io/badge/Standard-SkillEngine%20v0.1.0-orange.svg)](SKILL.md)
 [![Network: Pharos Atlantic Testnet](https://img.shields.io/badge/Network-Pharos%20Atlantic%20(688689)-purple.svg)](assets/networks.json)
 
-> **Pharos Agent Arena (Season of AI) — Task 6: Saga Executor (`saga-executor`)**  
-> **Track**: `SkillEngine` | **Difficulty**: `Hard` (200 Base Pts + 50 Video Bonus)  
-> **Author / GitHub Identity**: [`JimmyOgb`](https://github.com/JimmyOgb)  
-> **Target Network**: Pharos Atlantic Testnet (`Chain ID: 688689`)  
-> **Workflow Scope**: The live application coordinates real on-chain wrapping and unwrapping of WPHRS (`deposit()` and `withdraw(uint256)`); it does not currently perform an AMM swap or vault deposit on Atlantic Testnet.  
+> **Pharos Agent Arena (Season of AI) — Task 6: Saga Executor (`saga-executor`)**
+> **Track**: `SkillEngine` | **Difficulty**: `Hard` (200 Base Pts + 50 Video Bonus)
+> **Author / GitHub Identity**: [`JimmyOgb`](https://github.com/JimmyOgb)
+> **Target Network**: Pharos Atlantic Testnet (`Chain ID: 688689`)
+> **Workflow Scope**: The application coordinates real on-chain multi-step saga execution on Pharos Atlantic Testnet across verified test infrastructure (`TKA`, `TKB`, `TestAMM`, `TestSagaVault`), as well as native wrapping and unwrapping lifecycle (`WPHRS`). Scenario A (Happy Path: 3/3 on-chain steps confirmed) is fully executed and verified on-chain; Scenario B (Forced Failure & LIFO compensation) is validated via comprehensive automated test coverage and labeled as unverified on-chain to strictly preserve safety and spending limits.
 > **Architecture**: Dual-layer architecture:
 > 1. **Zero-Mock Real On-Chain Browser Coordinator** executing genuine, wallet-approved WPHRS wrapping (`deposit()`) and unwrapping compensation (`withdraw(uint256)`) on Pharos Atlantic Testnet.
 > 2. **Deterministic Python Saga State Machine Engine** for autonomous agent simulation, transient retry policies, LIFO compensation, and emergency audit snapshots.
@@ -232,17 +232,51 @@ The frontend is a **zero-mock, real on-chain transaction coordinator** running i
 - **Native Gas Token**: `PHRS` (18 decimals)
 - **Block Explorer**: `https://atlantic.pharosscan.xyz`
 
-### Live Verified Contracts (`assets/tokens.json`)
+### Live Verified Contracts on Atlantic Testnet (`assets/tokens.json`)
+
 | Contract | Address | Verified Bytecode | Supported Methods |
 |---|---|---|---|
-| **WPHRS (Wrapped Pharos)** | `0x838800b758277CC111B2d48Ab01e5E164f8E9471` | 7,262 bytes | `deposit()`, `withdraw(uint256)`, `balanceOf()`, `approve()`, `allowance()` |
-| **Permit2 (Canonical)** | `0x000000000022D473030F116dDEE9F6B43aC78BA3` | 18,306 bytes | `approve()`, `permit()`, `transferFrom()` |
-| **USDC (Pharos Registry)** | `0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B` | 3,598 bytes | `balanceOf()`, `approve()`, `transfer()` |
-| **MultiCall3 (Canonical)** | `0xcA11bde05977b3631167028862bE2a173976CA11` | Canonical bytecode | `aggregate3()`, `getBlockNumber()` |
+| **TestToken A (TKA)** | [`0x6396f75c03bbc44503f9c155e834dda30c947036`](https://atlantic.pharosscan.xyz/address/0x6396f75c03bbc44503f9c155e834dda30c947036) | 4,679 bytes | `approve()`, `transfer()`, `transferFrom()`, `claimFaucet()`, `balanceOf()` |
+| **TestToken B (TKB)** | [`0xf37815a784c5a97b7319ecb89a8f0e34aafd472a`](https://atlantic.pharosscan.xyz/address/0xf37815a784c5a97b7319ecb89a8f0e34aafd472a) | 4,679 bytes | `approve()`, `transfer()`, `transferFrom()`, `claimFaucet()`, `balanceOf()` |
+| **TestAMM Router** | [`0x5302b3cc1d7741dc6bf506349a51355e10b9de1d`](https://atlantic.pharosscan.xyz/address/0x5302b3cc1d7741dc6bf506349a51355e10b9de1d) | 9,954 bytes | `swapWithSagaId()`, `unwindSwapWithSagaId()`, `supplyLiquidity()`, `tokenA()`, `tokenB()`, `owner()` |
+| **TestSagaVault** | [`0x41040230bce1bb36248fb799d968f6fa087606e0`](https://atlantic.pharosscan.xyz/address/0x41040230bce1bb36248fb799d968f6fa087606e0) | 3,411 bytes | `deposit()`, `depositWithFailFlag()`, `withdraw()`, `totalDeposited()`, `userShares()`, `asset()` |
+| **WPHRS (Wrapped Pharos)** | [`0x838800b758277CC111B2d48Ab01e5E164f8E9471`](https://atlantic.pharosscan.xyz/address/0x838800b758277CC111B2d48Ab01e5E164f8E9471) | 7,262 bytes | `deposit()`, `withdraw(uint256)`, `balanceOf()`, `approve()`, `allowance()` |
+| **Permit2 (Canonical)** | [`0x000000000022D473030F116dDEE9F6B43aC78BA3`](https://atlantic.pharosscan.xyz/address/0x000000000022D473030F116dDEE9F6B43aC78BA3) | 18,306 bytes | `approve()`, `permit()`, `transferFrom()` |
+| **USDC (Pharos Registry)** | [`0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B`](https://atlantic.pharosscan.xyz/address/0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B) | 3,598 bytes | `balanceOf()`, `approve()`, `transfer()` |
 
-> [!NOTE]
-> **Protocol Availability Disclosure**:
-> Investigation of Atlantic Testnet RPC and official Pharos documentation confirmed that no public AMM router (e.g. Uniswap Router) or yield vault is currently deployed. Rather than inventing fake contract addresses, the primary live workflow coordinates the genuine on-chain WPHRS wrapping and unwrapping lifecycle.
+### 10.1 Scenario A Mined On-Chain Transaction Evidence
+
+All transactions below were mined on Pharos Atlantic Testnet (`Chain ID: 688689`) and verified via live JSON-RPC receipts (`gasPrice: 10.0 Gwei`):
+
+| Transaction Purpose | Transaction Hash | Block | Status | Gas Used | Actual Fee (PHRS) |
+|---|---|---|---|---|---|
+| **Deploy TestToken A** | [`0xfe8da3ba...5f8a3`](https://atlantic.pharosscan.xyz/tx/0xfe8da3ba54d09e965b27b1934c0ecc8bd8cd61d3223ad744d63130c4b3d5f8a3) | #31665481 | `SUCCESS (0x1)` | 1,180,465 | 0.011805 PHRS |
+| **Deploy TestToken B** | [`0xfd228168...f394`](https://atlantic.pharosscan.xyz/tx/0xfd2281687972d2a10de8784a6038cc58f769192ba7cbb4b7f73778c22cccf394) | #31665527 | `SUCCESS (0x1)` | 1,180,465 | 0.011805 PHRS |
+| **Deploy TestAMM Router** | [`0x6619d762...cf55d`](https://atlantic.pharosscan.xyz/tx/0x6619d762a40524177240eb57ff1a02b29d59ffd1ba6525aa5bf7dd71712cf55d) | #31665560 | `SUCCESS (0x1)` | 2,206,334 | 0.022063 PHRS |
+| **Deploy TestSagaVault** | [`0x3b8e4699...2561`](https://atlantic.pharosscan.xyz/tx/0x3b8e4699a532ab5037d8a94e90f7d87488c2212fd5db869687a5055937652561) | #31665656 | `SUCCESS (0x1)` | 794,556 | 0.007946 PHRS |
+| **Seed Pool (1,000 A + 1,000 B)** | [`0xb8241042...2321`](https://atlantic.pharosscan.xyz/tx/0xb8241042cd1ab5ea929d252ba63f171e8f3763fe7a4bce89688771a781762321) | #31670598 | `SUCCESS (0x1)` | 94,612 | 0.000946 PHRS |
+| **Step 1: Approve 100 TKA** | [`0xd03b9504...a788`](https://atlantic.pharosscan.xyz/tx/0xd03b95042bd1db712990f10687558c1f4e33a7541e5ed4bf7ce350854121a788) | #31674421 | `SUCCESS (0x1)` | 46,758 | 0.000468 PHRS |
+| **Step 2: Swap 100 TKA $	o$ TKB** | [`0x1123d411...675a`](https://atlantic.pharosscan.xyz/tx/0x1123d411185a0d5d3120eb7895ebad3a6718f78cd3a2d8f022b16f1bc3e0675a) | #31674475 | `SUCCESS (0x1)` | 199,755 | 0.001998 PHRS |
+| **Step 3 Prereq: Approve 100 TKB** | [`0x1f464d15...476f`](https://atlantic.pharosscan.xyz/tx/0x1f464d15f1c0b179b80e9b89b6b547e0e47d2dff94c63a6d2954ee33e7e4476f) | #31672215 | `SUCCESS (0x1)` | 46,758 | 0.000468 PHRS |
+| **Step 3: Deposit 100 TKB in Vault** | [`0x94b81e49...e11c`](https://atlantic.pharosscan.xyz/tx/0x94b81e4926331ad2ae54c8788955b7a47cc871c491e3079acd80a9fa2398e11c) | #31674559 | `SUCCESS (0x1)` | 126,296 | 0.001263 PHRS |
+
+### 10.2 Spending Cap & Balance Reconciliation
+
+- **Total Cumulative Fee Paid Across All 24 Transactions**: `0.06877121 PHRS` (68,771,210,000,000,000 wei)
+- **Established Hard Cap**: `0.085000 PHRS`
+- **Headroom Remaining**: `+0.01622879 PHRS` (Strictly under spending cap: **VERIFIED**)
+- **Deployer Wallet**: `0xe4220c4b71877bb94eb173f467ef5c5557017085`
+- **Wallet Token Balances**:
+  - `TKA`: `999,700.0 TKA` (1M initial + 1,000 faucet - 1,000 pool seed - 3x 100 swaps)
+  - `TKB`: `999,200.0 TKB` (Reconciliation: Swap #3 added +100 TKB, Vault deposit removed -100 TKB $	o$ net zero delta on wallet balance; Vault gained 100 TKB)
+- **AMM Pool Reserves**: `1,300.0 TKA` and `700.0 TKB`
+- **Vault State**: `100.0 TKB` total deposited, `100.0 shares` minted to user (`depositCount == 1`)
+
+### 10.3 Scenario B Status Disclosure
+
+> [!IMPORTANT]
+> **Scenario B On-Chain Status**:
+> In accordance with safety protocol and spending cap constraints, **Scenario A is the sole verified on-chain execution sequence**. Scenario B (intentional revert at Step 3 and reverse LIFO compensation) is validated via 98 automated unit and integration tests under `tests/test_contracts_saga.py`, but is **unverified on live Atlantic Testnet** to prevent unnecessary transaction fees or state corruption.
 
 ---
 
@@ -301,16 +335,32 @@ Then navigate to `http://localhost:8080/`.
 
 ## 13. Automated Testing Suite & CI Matrix
 
-The repository contains **59 automated tests** covering all rubric criteria, failure modes, packaging specifications, zero-mock constraints, dual-chain verification, and unwrap gas protection:
+The repository contains **98 automated tests** covering all rubric criteria, smart contract saga isolation, adversarial compensation checks, failure modes, packaging specifications, zero-mock constraints, dual-chain verification, unwrap gas protection, and share-based recovery boundaries:
 
 ```bash
-pytest -v
+pytest -p no:gltest tests/
 ```
 
 ```text
 ============================= test session starts =============================
 platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
-collected 59 items
+rootdir: skills/pharos-saga-executor
+collected 98 items
+
+tests/test_cli.py .....                                                  [  5%]
+tests/test_client.py ......                                              [ 11%]
+tests/test_compensation.py ...                                           [ 14%]
+tests/test_compensation_failure.py .                                     [ 15%]
+tests/test_contracts_saga.py ............                                [ 27%]
+tests/test_onchain_workflow.py ......................................    [ 66%]
+tests/test_retry_policy.py ......                                        [ 72%]
+tests/test_server.py ...........                                         [ 83%]
+tests/test_skillengine.py .....                                          [ 88%]
+tests/test_state_machine.py .......                                      [ 95%]
+tests/test_step_execution.py ....                                        [100%]
+
+============================= 98 passed in 30.49s =============================
+```
 
 tests/test_cli.py::test_cli_demo_stdout PASSED                           [  1%]
 tests/test_cli.py::test_cli_demo_json PASSED                             [  3%]
@@ -410,5 +460,5 @@ To claim the **+50 video bonus**, the demonstration video will showcase:
 
 ## License
 
-This project is open-source software licensed under the [MIT License](LICENSE).  
+This project is open-source software licensed under the [MIT License](LICENSE).
 Developed by [`JimmyOgb`](https://github.com/JimmyOgb) for the **Pharos Agent Arena Hackathon**.

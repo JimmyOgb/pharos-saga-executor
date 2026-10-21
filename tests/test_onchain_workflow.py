@@ -369,3 +369,820 @@ def test_no_signing_or_broadcasting_during_wallet_connection():
     assert "eth_signTypedData" not in conn_code
     assert "0x095ea7b3" not in conn_code
 
+
+
+def test_phase1_wizard_static_structure_and_constants():
+    """Verify web/deploy.html includes strict deployer, chain, artifact hash, and gas guard constants."""
+    deploy_file = WEB_DIR / "deploy.html"
+    assert deploy_file.exists(), "web/deploy.html must exist"
+    content = deploy_file.read_text(encoding="utf-8")
+
+    # 1. Approved deployer address
+    approved_acc = "0xe4220c4b71877bb94eb173f467ef5c5557017085".lower()
+    assert approved_acc in content.lower(), f"Approved account {approved_acc} must be hardcoded in deploy.html"
+    assert "APPROVED_DEPLOYER_ACCOUNT" in content
+
+    # 2. Approved chain constants
+    assert "688689" in content
+    assert "0xa8231" in content.lower()
+    assert "verifyNetworkAndChain" in content
+    assert "verifyDeployerAccount" in content
+
+    # 3. Approved gas limits
+    assert "1515000n" in content  # TKA / TKB
+    assert "2830000n" in content  # TestAMM
+    assert "1020000n" in content  # TestSagaVault
+    assert "APPROVED_GAS_LIMITS" in content
+
+    # 4. Hard cumulative fee ceiling (0.0700 PHRS)
+    assert "70000000000000000n" in content  # 0.0700 PHRS in wei
+    assert "HARD_CUMULATIVE_FEE_CEILING_WEI" in content
+
+    # 5. Independent SHA-256 bytecode hashes
+    assert "497ab5f77653dfbecf18a44069e027ac2e8e3084f0ffde83d2f460b6f8a2b909" in content
+    assert "b88581b46746f692f5224b8656a6d66f579bce7578306765ef27d7bba08aa1d9" in content
+    assert "36c6920fb7121165541755422842d65379ccd3cf6a08776373717848a9afd1f7" in content
+    assert "EXPECTED_BYTECODE_SHA256" in content
+
+    # 6. Pinned gas parameter in eth_sendTransaction
+    assert "gas: '0x' + p.approvedLimit.toString(16)" in content
+
+    # 7. Disclose final transaction parameters in modal
+    assert "mdDeployerAccount" in content
+    assert "mdBytecodeHash" in content
+    assert "mdGasLimit" in content
+    assert "mdProjectedTotal" in content
+
+    # 8. Event listeners for account and chain change
+    assert "accountsChanged" in content
+    assert "chainChanged" in content
+
+    # 9. No Permit2 collisions
+    assert "0x095ea7b3" not in content
+
+
+def test_phase1_wizard_account_and_chain_guard_simulation():
+    """Simulate account and chain validation guards for the Phase 1 deployment wizard."""
+    approved_acc = "0xe4220c4b71877bb94eb173f467ef5c5557017085".lower()
+    atlantic_hex = "0xa8231"
+    atlantic_int = 688689
+
+    def guard_check(active_acc, wallet_chain, rpc_chain):
+        if not active_acc or active_acc.lower() != approved_acc:
+            raise PermissionError(f"Unauthorized deployer account: {active_acc}")
+        if wallet_chain != atlantic_hex and int(wallet_chain, 16) != atlantic_int:
+            raise ValueError(f"Wallet chain mismatch: {wallet_chain}")
+        if rpc_chain != atlantic_hex and int(rpc_chain, 16) != atlantic_int:
+            raise ValueError(f"RPC chain mismatch: {rpc_chain}")
+        return True
+
+    # 1. Approved case (with mixed case input) -> passes
+    assert guard_check("0xe4220c4B71877bb94eb173f467eF5C5557017085", "0xa8231", "0xa8231") is True
+
+    # 2. Wrong account -> raises PermissionError
+    with pytest.raises(PermissionError, match="Unauthorized deployer account"):
+        guard_check("0x1111111111111111111111111111111111111111", "0xa8231", "0xa8231")
+
+    # 3. Wrong chain -> raises ValueError
+    with pytest.raises(ValueError, match="Wallet chain mismatch"):
+        guard_check(approved_acc, "0x1", "0xa8231")
+
+    with pytest.raises(ValueError, match="RPC chain mismatch"):
+        guard_check(approved_acc, "0xa8231", "0x5")
+
+
+def test_phase1_wizard_artifact_integrity_guard_simulation():
+    """Verify compiled contract bytecode matches independently reviewed SHA-256 hashes."""
+    import hashlib
+
+    contracts_file = ASSETS_DIR / "contracts" / "compiled_contracts.json"
+    assert contracts_file.exists(), "compiled_contracts.json must exist"
+    data = json.loads(contracts_file.read_text(encoding="utf-8"))
+
+    expected_hashes = {
+        "TestToken": "497ab5f77653dfbecf18a44069e027ac2e8e3084f0ffde83d2f460b6f8a2b909",
+        "TestAMM": "b88581b46746f692f5224b8656a6d66f579bce7578306765ef27d7bba08aa1d9",
+        "TestSagaVault": "36c6920fb7121165541755422842d65379ccd3cf6a08776373717848a9afd1f7",
+    }
+
+    def verify_bytecode_hash(c_name, bytecode_hex):
+        raw_hex = bytecode_hex[2:] if bytecode_hex.startswith("0x") else bytecode_hex
+        computed = hashlib.sha256(bytes.fromhex(raw_hex)).hexdigest()
+        expected = expected_hashes[c_name]
+        if computed != expected:
+            raise ValueError(f"Bytecode integrity violation for {c_name}: expected {expected}, got {computed}")
+        return True
+
+    # 1. Genuine artifacts pass
+    for name in expected_hashes:
+        assert verify_bytecode_hash(name, data[name]["bytecode"]) is True
+
+    # 2. Altered artifact fails
+    tampered_bytecode = data["TestToken"]["bytecode"][:-2] + "ff"
+    with pytest.raises(ValueError, match="Bytecode integrity violation for TestToken"):
+        verify_bytecode_hash("TestToken", tampered_bytecode)
+
+
+def test_phase1_wizard_constructor_and_sequence_guards():
+    """Simulate constructor parameter verification and deployment order sequencing."""
+    from eth_abi import decode
+    import re
+
+    addr_pattern = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
+    def validate_step(idx, deployed_state, tka_hex, tkb_hex):
+        if idx == 1:
+            if len(tka_hex) != 448:
+                raise ValueError("Invalid TKA constructor calldata length")
+            decoded = decode(["string", "string", "uint256"], bytes.fromhex(tka_hex))
+            if decoded[0] != "Test Token A" or decoded[1] != "TKA" or decoded[2] != 10**24:
+                raise ValueError(f"Unexpected TKA constructor args: {decoded}")
+            return "OK_TKA"
+
+        elif idx == 2:
+            if not deployed_state.get("tka"):
+                raise RuntimeError("Sequence violation: TKA must be deployed before TKB")
+            if len(tkb_hex) != 448:
+                raise ValueError("Invalid TKB constructor calldata length")
+            decoded = decode(["string", "string", "uint256"], bytes.fromhex(tkb_hex))
+            if decoded[0] != "Test Token B" or decoded[1] != "TKB" or decoded[2] != 10**24:
+                raise ValueError(f"Unexpected TKB constructor args: {decoded}")
+            return "OK_TKB"
+
+        elif idx == 3:
+            tka = deployed_state.get("tka")
+            tkb = deployed_state.get("tkb")
+            if not tka or not tkb:
+                raise RuntimeError("Sequence violation: TKA and TKB must be deployed before TestAMM")
+            if not addr_pattern.match(tka) or not addr_pattern.match(tkb):
+                raise ValueError("Malformed token addresses")
+            if tka.lower() == tkb.lower():
+                raise ValueError("AMM tokens must be distinct")
+            return "OK_AMM"
+
+        elif idx == 4:
+            tkb = deployed_state.get("tkb")
+            if not tkb:
+                raise RuntimeError("Sequence violation: TKB must be deployed before TestSagaVault")
+            if not addr_pattern.match(tkb):
+                raise ValueError("Malformed asset address")
+            return "OK_VAULT"
+
+    # Hex calldata from deploy.html
+    tka_hex = "000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000d3c21bcecceda1000000000000000000000000000000000000000000000000000000000000000000000c5465737420546f6b656e204100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003544b410000000000000000000000000000000000000000000000000000000000"
+    tkb_hex = "000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000d3c21bcecceda1000000000000000000000000000000000000000000000000000000000000000000000c5465737420546f6b656e204200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003544b420000000000000000000000000000000000000000000000000000000000"
+
+    state = {"tka": None, "tkb": None, "amm": None, "vault": None}
+
+    # Step 1 succeeds
+    assert validate_step(1, state, tka_hex, tkb_hex) == "OK_TKA"
+
+    # Step 2 without Step 1 completion fails
+    with pytest.raises(RuntimeError, match="Sequence violation"):
+        validate_step(2, state, tka_hex, tkb_hex)
+
+    # Set Step 1 complete -> Step 2 succeeds
+    state["tka"] = "0x1111111111111111111111111111111111111111"
+    assert validate_step(2, state, tka_hex, tkb_hex) == "OK_TKB"
+
+    # Step 3 with identical tokens fails
+    state["tkb"] = "0x1111111111111111111111111111111111111111"
+    with pytest.raises(ValueError, match="AMM tokens must be distinct"):
+        validate_step(3, state, tka_hex, tkb_hex)
+
+    # Step 3 with distinct tokens succeeds
+    state["tkb"] = "0x2222222222222222222222222222222222222222"
+    assert validate_step(3, state, tka_hex, tkb_hex) == "OK_AMM"
+
+    # Step 4 succeeds
+    assert validate_step(4, state, tka_hex, tkb_hex) == "OK_VAULT"
+
+
+def test_phase1_wizard_gas_estimate_and_budget_ceiling_guards():
+    """Simulate gas estimate checks, balance limits, and hard cumulative fee ceiling (0.0700 PHRS)."""
+    approved_gas_limits = {
+        1: 1515000,
+        2: 1515000,
+        3: 2830000,
+        4: 1020000,
+    }
+    hard_fee_ceiling_wei = 70000000000000000  # 0.0700 PHRS
+
+    def pre_deploy_gas_check(idx, simulated_gas, cumulative_spent_wei, current_gas_price_wei, current_bal_wei):
+        limit = approved_gas_limits[idx]
+        if simulated_gas > limit:
+            raise ValueError(f"Simulated gas {simulated_gas} exceeds approved limit {limit}")
+
+        next_step_max_fee = limit * current_gas_price_wei
+        projected_total = cumulative_spent_wei + next_step_max_fee
+
+        if projected_total > hard_fee_ceiling_wei:
+            raise OverflowError(f"Projected cumulative fee {projected_total} exceeds ceiling {hard_fee_ceiling_wei}")
+
+        if current_bal_wei < next_step_max_fee:
+            raise ValueError(f"Insufficient balance: {current_bal_wei} < {next_step_max_fee}")
+
+        return projected_total
+
+    # 1. Normal estimates at 10 Gwei pass within ceiling
+    gas_price_10gwei = 10_000_000_000
+    user_bal = 100_000_000_000_000_000  # 0.10 PHRS
+
+    # Live observed estimate for TKA on Atlantic: 1,441,494 <= 1,515,000 approved limit
+    proj_1 = pre_deploy_gas_check(1, 1441494, 0, gas_price_10gwei, user_bal)
+    assert proj_1 == 1515000 * 10_000_000_000  # 0.01515 PHRS <= 0.0700 PHRS
+
+    # 2. Excessive gas estimate fails
+    with pytest.raises(ValueError, match="exceeds approved limit"):
+        pre_deploy_gas_check(1, 1600000, 0, gas_price_10gwei, user_bal)
+
+    # 3. Cumulative fee overflow fails (e.g. if cumulative spent is already high or gas price spikes)
+    high_spent = 60_000_000_000_000_000  # 0.060 PHRS
+    with pytest.raises(OverflowError, match="exceeds ceiling"):
+        # Next step max fee = 1.515M * 10 Gwei = 0.01515 PHRS -> 0.060 + 0.01515 = 0.07515 > 0.0700
+        pre_deploy_gas_check(1, 1441494, high_spent, gas_price_10gwei, user_bal)
+
+    # 4. Insufficient user balance fails
+    low_bal = 5_000_000_000_000_000  # 0.005 PHRS < 0.01515 PHRS
+    with pytest.raises(ValueError, match="Insufficient balance"):
+        pre_deploy_gas_check(1, 1441494, 0, gas_price_10gwei, low_bal)
+
+
+def test_phase1_wizard_receipt_and_runtime_bytecode_guards():
+    """Simulate receipt status polling and post-deployment runtime bytecode verification."""
+    def verify_mined_deployment(receipt, runtime_code):
+        if not receipt:
+            raise TimeoutError("Receipt polling timed out")
+        if receipt.get("status") != "0x1":
+            raise RuntimeError(f"Deployment transaction reverted on-chain with status {receipt.get('status')}")
+        if not receipt.get("contractAddress"):
+            raise ValueError("Receipt did not return contractAddress")
+        if not runtime_code or runtime_code in ("0x", "0x0") or len(runtime_code) <= 10:
+            raise RuntimeError("Deployed contract contains empty or invalid runtime bytecode")
+        return receipt["contractAddress"]
+
+    # 1. Success case
+    good_receipt = {
+        "status": "0x1",
+        "contractAddress": "0x1234567890123456789012345678901234567890",
+        "gasUsed": "0x120341",
+        "effectiveGasPrice": "0x2540be400",
+        "blockNumber": "0x1e2f4a",
+    }
+    good_code = "0x608060405234801561001057600080fd5b50..."
+    assert verify_mined_deployment(good_receipt, good_code) == "0x1234567890123456789012345678901234567890"
+
+    # 2. Reverted transaction
+    bad_receipt = {"status": "0x0", "contractAddress": "0x1234..."}
+    with pytest.raises(RuntimeError, match="reverted on-chain with status 0x0"):
+        verify_mined_deployment(bad_receipt, good_code)
+
+    # 3. Missing contract address
+    missing_addr_receipt = {"status": "0x1", "contractAddress": None}
+    with pytest.raises(ValueError, match="Receipt did not return contractAddress"):
+        verify_mined_deployment(missing_addr_receipt, good_code)
+
+    # 4. Empty runtime bytecode
+    with pytest.raises(RuntimeError, match="empty or invalid runtime bytecode"):
+        verify_mined_deployment(good_receipt, "0x")
+
+
+def test_phase1_wizard_pending_deployment_duplicate_prevention():
+    """Simulate Fix 1: Pending transaction tracking in localStorage, duplicate prevention, timeout retention, and reload recovery."""
+    storage = {}
+
+    def simulate_submit_tx(step_idx, contract_name, tx_hash, deployer):
+        # Prevent submission if a pending tx is already unresolved
+        if "pharos_pending_deployment" in storage:
+            p = json.loads(storage["pharos_pending_deployment"])
+            raise RuntimeError(f"Cannot start deployment: Step {p['idx']} tx {p['txHash']} is pending/unresolved.")
+
+        # Persist immediately upon broadcast before polling
+        record = {
+            "idx": step_idx,
+            "contractName": contract_name,
+            "txHash": tx_hash,
+            "timestamp": 1234567890,
+            "deployer": deployer.lower(),
+        }
+        storage["pharos_pending_deployment"] = json.dumps(record)
+        return "LOCKED_PENDING"
+
+    def simulate_poll_timeout():
+        # On timeout, pending record MUST remain intact in storage!
+        assert "pharos_pending_deployment" in storage
+        return "SET_RECHECK_UI"
+
+    def simulate_reload_recovery(rpc_receipt):
+        if "pharos_pending_deployment" not in storage:
+            return "NO_PENDING"
+        p = json.loads(storage["pharos_pending_deployment"])
+        if rpc_receipt is None:
+            # Transaction is unmined/in-flight: must remain locked
+            return "REMAIN_LOCKED"
+        if rpc_receipt.get("status") != "0x1":
+            # Reverted: clear lock to allow user retry
+            del storage["pharos_pending_deployment"]
+            return "CLEARED_FOR_RETRY"
+        # Mined: finalize and remove lock
+        del storage["pharos_pending_deployment"]
+        return "DEPLOYMENT_CONFIRMED"
+
+    # Step 1: Submit deployment for TKA
+    deployer = "0xe4220c4b71877bb94eb173f467ef5c5557017085"
+    assert simulate_submit_tx(1, "TestToken A", "0xaaaa1111", deployer) == "LOCKED_PENDING"
+
+    # Duplicate submission while pending is strictly rejected
+    with pytest.raises(RuntimeError, match="pending/unresolved"):
+        simulate_submit_tx(1, "TestToken A", "0xaaaa2222", deployer)
+
+    with pytest.raises(RuntimeError, match="pending/unresolved"):
+        simulate_submit_tx(2, "TestToken B", "0xbbbb1111", deployer)
+
+    # Polling times out: record is preserved in storage
+    assert simulate_poll_timeout() == "SET_RECHECK_UI"
+    assert "pharos_pending_deployment" in storage
+
+    # Reload while tx is still unmined: remains locked with Re-check UI
+    assert simulate_reload_recovery(None) == "REMAIN_LOCKED"
+    assert "pharos_pending_deployment" in storage
+
+    # Reload after tx is mined with status 0x1: confirms deployment and clears lock
+    mined_receipt = {"status": "0x1", "contractAddress": "0x1111111111111111111111111111111111111111"}
+    assert simulate_reload_recovery(mined_receipt) == "DEPLOYMENT_CONFIRMED"
+    assert "pharos_pending_deployment" not in storage
+
+    # Now step 2 can be submitted without collision
+    assert simulate_submit_tx(2, "TestToken B", "0xbbbb1111", deployer) == "LOCKED_PENDING"
+
+
+def test_phase1_wizard_runtime_bytecode_verification():
+    """Simulate Fix 2: Strengthened runtime contract verification for TestToken (bit-for-bit) and AMM/Vault (length, preamble, immutables)."""
+    artifacts_path = ASSETS_DIR / "contracts" / "compiled_contracts.json"
+    assert artifacts_path.exists(), "compiled_contracts.json must exist"
+    with open(artifacts_path, "r", encoding="utf-8") as f:
+        artifacts = json.load(f)
+
+    def verify_runtime_code(contract_key, deployed_code, expected_deps=None):
+        if not deployed_code or deployed_code in ("0x", "0x0") or len(deployed_code) <= 10:
+            raise ValueError(f"Empty runtime bytecode for {contract_key}")
+
+        expected = artifacts[contract_key]["runtime_bytecode"].lower()
+        actual = deployed_code.lower()
+
+        if contract_key == "TestToken":
+            # Bit-for-bit match (no immutables)
+            if actual != expected:
+                raise ValueError(f"Bit-for-bit mismatch for {contract_key}")
+            return True
+
+        # Length check
+        if len(actual) != len(expected):
+            raise ValueError(f"Length mismatch for {contract_key}: expected {len(expected)}, got {len(actual)}")
+
+        # Preamble check (first 400 hex chars + 0x = 402 chars)
+        if actual[:402] != expected[:402]:
+            raise ValueError(f"Preamble mismatch for {contract_key}")
+
+        # Immutable addresses check
+        expected_deps = expected_deps or {}
+        if contract_key == "TestAMM":
+            for role in ("owner", "tokenA", "tokenB"):
+                dep_addr = expected_deps.get(role, "").lower().replace("0x", "")
+                if not dep_addr or dep_addr not in actual:
+                    raise ValueError(f"TestAMM missing immutable {role}: {dep_addr}")
+        elif contract_key == "TestSagaVault":
+            asset_addr = expected_deps.get("asset", "").lower().replace("0x", "")
+            if not asset_addr or asset_addr not in actual:
+                raise ValueError(f"TestSagaVault missing immutable asset: {asset_addr}")
+
+        return True
+
+    # 1. TestToken: Bit-for-bit verification
+    token_code = artifacts["TestToken"]["runtime_bytecode"]
+    assert verify_runtime_code("TestToken", token_code) is True
+
+    # TestToken: Altered byte fails
+    altered_token = token_code[:-2] + "ff"
+    with pytest.raises(ValueError, match="Bit-for-bit mismatch"):
+        verify_runtime_code("TestToken", altered_token)
+
+    # 2. TestAMM: Length, preamble, and immutables
+    amm_expected = artifacts["TestAMM"]["runtime_bytecode"]
+    owner = "0xe4220c4b71877bb94eb173f467ef5c5557017085"
+    token_a = "0x1111111111111111111111111111111111111111"
+    token_b = "0x2222222222222222222222222222222222222222"
+
+    # Simulate runtime code with immutables substituted
+    clean_amm = amm_expected.lower().replace("0x", "")
+    mock_amm = "0x" + clean_amm[:500] + owner[2:].lower() + token_a[2:].lower() + token_b[2:].lower() + clean_amm[500 + 40*3:]
+    assert len(mock_amm) == len(amm_expected)
+
+    deps = {"owner": owner, "tokenA": token_a, "tokenB": token_b}
+    assert verify_runtime_code("TestAMM", mock_amm, deps) is True
+
+    # AMM length mismatch fails
+    with pytest.raises(ValueError, match="Length mismatch"):
+        verify_runtime_code("TestAMM", mock_amm + "00", deps)
+
+    # AMM preamble mismatch fails
+    bad_preamble_amm = mock_amm[:10] + "0000" + mock_amm[14:]
+    with pytest.raises(ValueError, match="Preamble mismatch"):
+        verify_runtime_code("TestAMM", bad_preamble_amm, deps)
+
+    # AMM missing tokenB fails
+    bad_deps = {"owner": owner, "tokenA": token_a, "tokenB": "0x9999999999999999999999999999999999999999"}
+    with pytest.raises(ValueError, match="missing immutable tokenB"):
+        verify_runtime_code("TestAMM", mock_amm, bad_deps)
+
+    # 3. TestSagaVault: Length, preamble, and asset immutable
+    vault_expected = artifacts["TestSagaVault"]["runtime_bytecode"]
+    clean_vault = vault_expected.lower().replace("0x", "")
+    mock_vault = "0x" + clean_vault[:500] + token_b[2:].lower() + clean_vault[500 + 40:]
+    assert len(mock_vault) == len(vault_expected)
+
+    vault_deps = {"asset": token_b}
+    assert verify_runtime_code("TestSagaVault", mock_vault, vault_deps) is True
+
+    # Vault missing asset fails
+    with pytest.raises(ValueError, match="missing immutable asset"):
+        verify_runtime_code("TestSagaVault", mock_vault, {"asset": "0x8888888888888888888888888888888888888888"})
+
+
+def test_deploy_html_contains_runtime_verification_and_duplicate_prevention():
+    """Verify that web/deploy.html contains all Fix 1 and Fix 2 implementation constructs."""
+    deploy_file = WEB_DIR / "deploy.html"
+    assert deploy_file.exists(), "web/deploy.html must exist"
+    content = deploy_file.read_text(encoding="utf-8")
+
+    # Fix 1 assertions
+    assert "pharos_pending_deployment" in content, "Must track pharos_pending_deployment in localStorage"
+    assert "setStepPendingLockUI" in content, "Must implement setStepPendingLockUI"
+    assert "setStepPendingRecheckUI" in content, "Must implement setStepPendingRecheckUI"
+    assert "recheckPendingDeployment" in content, "Must implement recheckPendingDeployment"
+    assert "checkPendingDeploymentStatus" in content, "Must implement checkPendingDeploymentStatus"
+    assert "restorePreviouslyDeployedState" in content, "Must implement restorePreviouslyDeployedState"
+
+    # Fix 2 assertions
+    assert "verifyDeployedRuntimeCode" in content, "Must implement verifyDeployedRuntimeCode"
+    assert "cleanDeployed.slice(0, preambleLen)" in content, "Must verify runtime preamble slice"
+    assert "cleanOwner" in content, "Must check owner immutable in TestAMM"
+    assert "cleanTokenA" in content, "Must check tokenA immutable in TestAMM"
+    assert "cleanTokenB" in content, "Must check tokenB immutable in TestAMM"
+    assert "cleanAsset" in content, "Must check asset immutable in TestSagaVault"
+
+
+def test_saga_frontend_address_management_and_no_dummy_defaults():
+    """Verify web/index.html removes Hardhat dummy addresses and enforces dynamic verified addresses."""
+    index_file = WEB_DIR / "index.html"
+    assert index_file.exists(), "web/index.html must exist"
+    content = index_file.read_text(encoding="utf-8")
+
+    # Hardhat dummy accounts must NOT be present as usable contract defaults
+    dummy_accounts = [
+        "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+        "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+    ]
+    for dummy in dummy_accounts:
+        assert f"const TKA_ADDR = '{dummy}'" not in content, f"Dummy address {dummy} must not be hardcoded default"
+        assert f"const TKB_ADDR = '{dummy}'" not in content, f"Dummy address {dummy} must not be hardcoded default"
+        assert f"const AMM_ADDR = '{dummy}'" not in content, f"Dummy address {dummy} must not be hardcoded default"
+        assert f"const VAULT_ADDR = '{dummy}'" not in content, f"Dummy address {dummy} must not be hardcoded default"
+
+    # Address validation and verification constructs
+    assert "isValidEthAddress" in content, "Must validate Ethereum address hex format"
+    assert "verifyContractCodeOnAtlantic" in content, "Must verify contract runtime bytecode via eth_getCode"
+    assert "loadAndVerifyDeployedContracts" in content, "Must load and verify deployment from pharos_saga_deployed"
+    assert "saveAndVerifyCustomAddresses" in content, "Must allow saving and verifying custom Atlantic addresses"
+    assert "contractsVerified" in content, "Must track contractsVerified flag"
+    assert "badgeContractsStatus" in content, "Must render contracts status badge"
+    assert "sagaBlockedBanner" in content, "Must display blocked banner when contracts are unverified"
+
+
+def test_saga_frontend_function_selectors_match_compiled_abi():
+    """Verify that web/index.html uses exact 4-byte function selectors matching compiled Solidity contracts."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    # Check correct selectors from compiled_contracts.json
+    assert "AMM_SWAP_SEL = '0x963b8dae'" in content, "swapWithSagaId must use 0x963b8dae"
+    assert "AMM_UNWIND_SEL = '0x0cd8cd2b'" in content, "unwindSwapWithSagaId must use 0x0cd8cd2b"
+    assert "VAULT_DEPOSIT_SEL = '0xb6b55f25'" in content, "vault deposit must use 0xb6b55f25"
+    assert "VAULT_FAIL_DEPOSIT_SEL = '0xea65d693'" in content, "depositWithFailFlag must use 0xea65d693"
+    assert "AMM_SUPPLY_LIQ_SEL = '0xf9dbb69f'" in content, "supplyLiquidity must use 0xf9dbb69f"
+    assert "ERC20_FAUCET_SEL = '0x57915897'" in content, "faucet must use 0x57915897"
+    assert "VAULT_USER_SHARES_SEL = '0xde69b3aa'" in content, "userShares must use 0xde69b3aa"
+    assert "ERC20_ALLOWANCE_SEL = '0xdd62ed3e'" in content, "allowance must use 0xdd62ed3e"
+
+
+def test_saga_dependent_allowances_and_preapproval_logic():
+    """Verify web/index.html checks on-chain allowance and executes prerequisite approvals for vault and AMM unwind."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    # Query allowance helper
+    assert "async function queryAllowance" in content, "Must implement queryAllowance helper"
+
+    # Step 3 Vault prerequisite approval
+    assert "step3_approve_vault" in content, "Step 3 must handle prerequisite Vault approval"
+
+    # Comp 1 AMM unwind prerequisite approval
+    assert "comp1_approve_amm" in content, "Comp 1 must handle prerequisite AMM unwind approval"
+
+    # Comp 2 residual allowance revocation
+    assert "Comp 2: Revoke" in content
+    assert "params: { spender: deployedContracts.amm, amount: '0' }" in content
+
+
+def test_saga_pool_liquidity_management_and_seeding_ui():
+    """Verify web/index.html includes pool liquidity inspection, test faucet, and supplyLiquidity seeding."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    assert "poolLiquiditySection" in content, "Must include pool liquidity section"
+    assert "dispPoolTKA" in content, "Must display AMM TKA reserve"
+    assert "dispPoolTKB" in content, "Must display AMM TKB reserve"
+    assert "btnSeedLiquidity" in content, "Must include Seed AMM Pool button"
+    assert "btnClaimFaucet" in content, "Must include Claim Faucet button"
+    assert "async function refreshPoolLiquidity" in content, "Must implement refreshPoolLiquidity"
+    assert "async function seedPoolLiquidity" in content, "Must implement seedPoolLiquidity"
+    assert "async function claimFaucetTokens" in content, "Must implement claimFaucetTokens"
+
+
+def test_saga_error_classification_and_duplicate_broadcast_prevention():
+    """Verify web/index.html distinctly handles wallet rejection, mined revert, timeout, and verifies receipt status."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    # Wallet rejection vs mined revert handling
+    assert "err.code === 4001" in content, "Must detect MetaMask user rejection code 4001"
+    assert "User rejected" in content, "Must detect User rejected message"
+    assert "Action aborted without state change" in content, "Must classify rejection without state change"
+
+    # Mined revert vs success handling
+    assert "status === 'SUCCESS'" in content, "Must require status SUCCESS for confirmation"
+    assert "REVERTED (EXPECTED)" in content, "Must record expected revert in forced failure scenario"
+    assert "queryVaultShares" in content, "Must verify vault shares balance on-chain"
+
+
+def test_simulation_address_validation_and_empty_code_rejection():
+    """Simulate address validation and bytecode verification rules for Atlantic testnet."""
+    import re
+
+    def is_valid_eth_address(addr):
+        return bool(isinstance(addr, str) and re.match(r"^0x[0-9a-fA-F]{40}$", addr.strip()))
+
+    def verify_contract_code_sim(addr, rpc_code_map):
+        if not is_valid_eth_address(addr):
+            return False
+        code = rpc_code_map.get(addr.lower().strip(), "0x")
+        return bool(code and code not in ("0x", "0x0") and len(code) > 10)
+
+    # Valid address format checks
+    assert is_valid_eth_address("0xe4220c4b71877bb94eb173f467ef5c5557017085") is True
+    assert is_valid_eth_address("0x123") is False
+    assert is_valid_eth_address("not-an-address") is False
+    assert is_valid_eth_address("") is False
+    assert is_valid_eth_address(None) is False
+
+    # Bytecode verification simulation
+    addr_with_code = "0xe4220c4b71877bb94eb173f467ef5c5557017085"
+    addr_empty_code = "0x0000000000000000000000000000000000000001"
+    code_map = {
+        addr_with_code.lower(): "0x608060405234801561001057600080fd5b50",
+        addr_empty_code.lower(): "0x",
+    }
+
+    assert verify_contract_code_sim(addr_with_code, code_map) is True
+    assert verify_contract_code_sim(addr_empty_code, code_map) is False
+    assert verify_contract_code_sim("0x9999999999999999999999999999999999999999", code_map) is False
+
+
+def test_simulation_dependent_approval_and_liquidity_guards():
+    """Simulate prerequisite approval and pool liquidity enforcement."""
+    swap_amount = 100 * 10**18
+
+    def evaluate_deposit_action(tkb_allowance, required_amount):
+        if tkb_allowance < required_amount:
+            return "PREREQUISITE_APPROVAL_REQUIRED"
+        return "READY_TO_DEPOSIT"
+
+    def evaluate_unwind_action(tkb_allowance, unwind_amount):
+        if tkb_allowance < unwind_amount:
+            return "PREREQUISITE_APPROVAL_REQUIRED"
+        return "READY_TO_UNWIND"
+
+    def evaluate_swap_liquidity(pool_tkb_reserve, requested_swap_out):
+        if pool_tkb_reserve < requested_swap_out:
+            raise ValueError("TestAMM: insufficient pool liquidity")
+        return True
+
+    # 1. Deposit allowance evaluation
+    assert evaluate_deposit_action(0, swap_amount) == "PREREQUISITE_APPROVAL_REQUIRED"
+    assert evaluate_deposit_action(50 * 10**18, swap_amount) == "PREREQUISITE_APPROVAL_REQUIRED"
+    assert evaluate_deposit_action(100 * 10**18, swap_amount) == "READY_TO_DEPOSIT"
+
+    # 2. Unwind allowance evaluation
+    assert evaluate_unwind_action(0, swap_amount) == "PREREQUISITE_APPROVAL_REQUIRED"
+    assert evaluate_unwind_action(100 * 10**18, swap_amount) == "READY_TO_UNWIND"
+
+    # 3. Liquidity evaluation
+    with pytest.raises(ValueError, match="insufficient pool liquidity"):
+        evaluate_swap_liquidity(0, swap_amount)
+
+    with pytest.raises(ValueError, match="insufficient pool liquidity"):
+        evaluate_swap_liquidity(50 * 10**18, swap_amount)
+
+    assert evaluate_swap_liquidity(1000 * 10**18, swap_amount) is True
+
+
+def test_gas_limit_bounding_and_liquidity_guard_enforcement():
+    """Verify web/index.html bounds transaction gas below 20,000,000, enforces Step 2 liquidity guard, and pre-simulates reverts."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    # 1. Bounded gas limit enforcement below 20M
+    assert "500000" in content, "Must bound gas limit to safe maximum (500,000 gas)"
+    assert "80000" in content, "Must enforce minimum safe gas floor (80,000 gas)"
+    assert "gas: gasHex" in content, "Must pass explicit gas parameter to eth_sendTransaction"
+
+    # 2. Step 2 Liquidity Guard
+    assert "minReserveRequired = 100n * 10n**18n" in content, "Must enforce minimum 100 token reserve for Step 2 swap"
+    assert "Liquidity Guard: TestAMM pool reserves insufficient" in content, "Must alert on insufficient reserves"
+
+    # 3. Intentional revert pre-simulation
+    assert "Pre-flight simulation" in content, "Must pre-simulate intentional revert path"
+    assert "DELIBERATE_FORCED_FAILURE" in content, "Must verify DELIBERATE_FORCED_FAILURE reason before sending tx"
+
+    # 4. Method name in inspector and logs
+    assert "async function pollReceipt(txHash, maxAttempts = 30, methodName = '')" in content, "pollReceipt must accept methodName"
+    assert "methodDisplay" in content, "pollReceipt must display methodName in inspector"
+
+
+def test_pre_swap_allowance_guard_and_remediation_in_frontend():
+    """Verify web/index.html includes mandatory pre-swap allowance check and prerequisite approval."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    # Pre-swap allowance check
+    assert "Mandatory Pre-Swap Guard: TKA allowance" in content
+    assert "step2_approve_amm" in content
+    assert "Allowance re-verification failed on-chain" in content
+    assert "On-chain allowance verified:" in content
+
+    # Dynamic gas estimation and error handling
+    assert "eth_estimateGas" in content
+    assert "Gas estimation failed for" in content
+    assert "Transaction blocked to protect funds" in content
+
+    # Revert status safety (reverts are never confirmed)
+    assert "FAILED (REVERTED)" in content
+    assert "Step 2 Swap transaction reverted on-chain" in content
+
+
+def test_offline_simulation_pre_swap_allowance_and_gas_clamping():
+    """Offline unit simulation of pre-swap allowance evaluation, approval flow, gas estimation, clamping, and receipt classification."""
+
+    # 1. Allowance check logic simulation
+    def check_swap_allowance(allowance, amount_in):
+        if allowance < amount_in:
+            return {"action": "PREREQUISITE_APPROVAL_REQUIRED", "needed": amount_in - allowance}
+        return {"action": "READY_FOR_SWAP"}
+
+    swap_amount = 100 * 10**18
+    assert check_swap_allowance(0, swap_amount)["action"] == "PREREQUISITE_APPROVAL_REQUIRED"
+    assert check_swap_allowance(50 * 10**18, swap_amount)["action"] == "PREREQUISITE_APPROVAL_REQUIRED"
+    assert check_swap_allowance(100 * 10**18, swap_amount)["action"] == "READY_FOR_SWAP"
+    assert check_swap_allowance(1000 * 10**18, swap_amount)["action"] == "READY_FOR_SWAP"
+
+    # 2. Approval confirmation on-chain re-verification simulation
+    def verify_approval_post_receipt(receipt_status, post_allowance, amount_in):
+        if receipt_status != "0x1":
+            return False, "Approval transaction reverted on-chain"
+        if post_allowance < amount_in:
+            return False, "On-chain allowance re-verification failed"
+        return True, "Allowance verified on-chain, ready for swap"
+
+    assert verify_approval_post_receipt("0x0", 100 * 10**18, swap_amount)[0] is False
+    assert verify_approval_post_receipt("0x1", 0, swap_amount)[0] is False
+    assert verify_approval_post_receipt("0x1", 100 * 10**18, swap_amount)[0] is True
+
+    # 3. Gas estimation & clamping logic simulation
+    def calculate_clamped_gas_limit(estimated_gas, multiplier=1.5, floor=80_000, ceil=500_000):
+        if estimated_gas is None:
+            raise ValueError("Gas estimation failed on-chain")
+        buffered = round(estimated_gas * multiplier)
+        return min(max(buffered, floor), ceil)
+
+    # Floor clamping
+    assert calculate_clamped_gas_limit(30_000) == 80_000
+    assert calculate_clamped_gas_limit(50_000) == 80_000
+    # Proportional buffering
+    assert calculate_clamped_gas_limit(100_000) == 150_000
+    assert calculate_clamped_gas_limit(200_000) == 300_000
+    assert calculate_clamped_gas_limit(220_000) == 330_000
+    # Ceiling clamping (below 20M RPC limit)
+    assert calculate_clamped_gas_limit(400_000) == 500_000
+    assert calculate_clamped_gas_limit(1_000_000) == 500_000
+
+    with pytest.raises(ValueError, match="Gas estimation failed"):
+        calculate_clamped_gas_limit(None)
+
+    # 4. Receipt status handling simulation (never confirm reverted)
+    def process_step_receipt(step, receipt_status, is_intentional_revert=False):
+        if receipt_status == "0x1":
+            return {"badge": "CONFIRMED", "next_step_unlocked": True}
+        if is_intentional_revert and receipt_status == "0x0":
+            return {"badge": "REVERTED (EXPECTED)", "next_step_unlocked": False, "comp_unlocked": True}
+        return {"badge": "FAILED (REVERTED)", "next_step_unlocked": False}
+
+    assert process_step_receipt(1, "0x1")["badge"] == "CONFIRMED"
+    assert process_step_receipt(1, "0x0")["badge"] == "FAILED (REVERTED)"
+    assert process_step_receipt(1, "0x0")["next_step_unlocked"] is False
+
+    assert process_step_receipt(2, "0x1")["badge"] == "CONFIRMED"
+    assert process_step_receipt(2, "0x1")["next_step_unlocked"] is True
+    assert process_step_receipt(2, "0x0")["badge"] == "FAILED (REVERTED)"
+    assert process_step_receipt(2, "0x0")["next_step_unlocked"] is False
+
+    # Scenario B Step 3 intentional revert
+    assert process_step_receipt(3, "0x0", is_intentional_revert=True)["badge"] == "REVERTED (EXPECTED)"
+    assert process_step_receipt(3, "0x0", is_intentional_revert=True)["comp_unlocked"] is True
+
+
+def test_step3_vault_approval_prerequisite_scope_and_reverification():
+    """Verify web/index.html correctly passes approveCalldata in step3_approve_vault and verifies on-chain TKB allowance."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    # Locate step3_approve_vault modal call
+    s3_idx = content.find("step: 'step3_approve_vault'")
+    assert s3_idx != -1, "step3_approve_vault must be present in index.html"
+    s3_block = content[s3_idx - 150 : s3_idx + 350]
+
+    # Verify no naked calldata identifier in scope
+    assert "calldata: approveCalldata" in s3_block, "Must pass calldata: approveCalldata explicitly"
+    assert "approveCalldata = ERC20_APPROVE_SEL" in s3_block
+
+    # Locate step3_approve_vault success handler
+    h_idx = content.find("config.step === 'step3_approve_vault'")
+    assert h_idx != -1, "step3_approve_vault handler must be present"
+    h_block = content[h_idx : h_idx + 850]
+
+    assert "Verifying on-chain TKB allowance" in h_block
+    assert "TKB allowance re-verification failed on-chain" in h_block
+    assert "On-chain TKB allowance verified:" in h_block
+    assert "executeStep(3, true)" in h_block
+
+
+def test_step3_auto_advance_and_vault_shares_state_recovery():
+    """Verify web/index.html auto-advances to wallet prompt on verified allowance and restores confirmed state from on-chain vault shares."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    # 1. UI element for user vault shares
+    assert 'id="dispUserShares"' in content, "Must include dispUserShares element in dashboard"
+
+    # 2. executeStep autoExecute support
+    s3_exec_idx = content.find("async function executeStep(stepNum, autoExecute = false)")
+    assert s3_exec_idx != -1, "executeStep must accept autoExecute parameter"
+    s3_def_block = content[s3_exec_idx : s3_exec_idx + 8500]
+
+    assert "Prompting wallet signature for Step 3 Vault deposit..." in s3_def_block
+    assert "await executeOnChainStepTx(stepConfig)" in s3_def_block
+
+    # 3. Step 2 and Comp 1 autoExecute support
+    assert "Prompting wallet signature for Step 2 Swap..." in s3_def_block
+    assert "Prompting wallet signature for Comp 1 Unwind..." in content
+
+    # 4. On-chain state recovery in refreshUserTokenBalances
+    bal_idx = content.find("async function refreshUserTokenBalances()")
+    assert bal_idx != -1, "refreshUserTokenBalances must be defined"
+    bal_block = content[bal_idx : bal_idx + 2200]
+
+    assert "queryVaultShares" in bal_block
+    assert "shares >= 100n * 10n**18n" in bal_block
+    assert "Step 3 Confirmed (100 Shares Minted)" in bal_block
+
+
+def test_stale_or_unrelated_vault_shares_do_not_falsely_confirm_earlier_steps():
+    """Phase 1 Safety Rule: Verify that holding on-chain vault shares does NOT falsely mark Step 1 or Step 2 confirmed."""
+    index_file = WEB_DIR / "index.html"
+    content = index_file.read_text(encoding="utf-8")
+
+    bal_idx = content.find("async function refreshUserTokenBalances()")
+    assert bal_idx != -1
+    bal_end = content.find("async function claimFaucetTokens()")
+    bal_block = content[bal_idx:bal_end]
+
+    # In the share recovery block, badgeStep1 and badgeStep2 must NOT be marked confirmed
+    recovery_idx = bal_block.find("shares >= 100n * 10n**18n")
+    assert recovery_idx != -1
+    recovery_code = bal_block[recovery_idx:]
+
+    assert "badgeStep1" not in recovery_code, "Vault shares must not alter Step 1 badge"
+    assert "badgeStep2" not in recovery_code, "Vault shares must not alter Step 2 badge"
+    assert "cardStep2" not in recovery_code, "Vault shares must not unlock Step 2 card"
+

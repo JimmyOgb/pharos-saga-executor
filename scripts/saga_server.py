@@ -103,6 +103,16 @@ class SagaServerHandler(BaseHTTPRequestHandler):
                 self.send_error(404, "tokens.json not found")
             return
 
+        if path == "/api/contracts":
+            contracts_file = ASSETS_DIR / "contracts" / "compiled_contracts.json"
+            if contracts_file.exists():
+                self._set_headers("application/json")
+                with open(contracts_file, "rb") as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_error(404, "compiled_contracts.json not found")
+            return
+
         if path == "/api/sagas":
             saga_def = ASSETS_DIR / "sagas" / "approve_swap_deposit.json"
             if saga_def.exists():

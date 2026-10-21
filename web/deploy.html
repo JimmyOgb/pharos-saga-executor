@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pharos Saga Executor — Phase 1: Controlled Test Contract Deployment</title>
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 400: '#22d3ee', 500: '#06b6d4', 600: '#0891b2' }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#080c14] text-slate-100 min-h-screen font-sans antialiased selection:bg-cyan-500 selection:text-black">
+
+  <!-- Network Banner -->
+  <div class="bg-gradient-to-r from-emerald-950 via-slate-900 to-cyan-950 border-b border-emerald-500/30 px-6 py-2 text-xs font-mono text-emerald-300 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+      <span class="font-bold text-white tracking-wider">PHASE 1 AUTHORIZED: CONTROLLED TEST CONTRACT DEPLOYMENT</span>
+      <span class="text-slate-500">|</span>
+      <span>Pharos Atlantic Testnet (Chain ID <span class="text-emerald-400 font-bold">688689</span>)</span>
+    </div>
+    <div class="text-[11px] text-slate-400">
+      Non-Custodial · Zero Private Keys Stored · MetaMask Signing Only
+    </div>
+  </div>
+
+  <main class="max-w-5xl mx-auto p-6 md:p-8 space-y-6">
+
+    <!-- Header -->
+    <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+      <div>
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 to-cyan-400 flex items-center justify-center text-black font-black text-lg">
+            Ψ
+          </div>
+          <div>
+            <h1 class="text-2xl font-black text-white tracking-tight">Phase 1: Test Contract Deployment Wizard</h1>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Deploy minimal test infrastructure (TKA, TKB, TestAMM, TestSagaVault) to Pharos Atlantic.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wallet Box -->
+      <div class="flex items-center gap-3">
+        <div id="walletInfoBox" class="hidden px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs flex items-center gap-3">
+          <div>
+            <div class="text-[10px] text-slate-500 font-mono">CONNECTED WALLET</div>
+            <div id="walletAddressDisplay" class="font-mono text-cyan-300 font-semibold">0x...</div>
+          </div>
+          <button onclick="disconnectWallet()" class="text-slate-500 hover:text-rose-400 text-xs">✕</button>
+        </div>
+        <button id="btnConnectWallet" onclick="connectWallet()" class="px-5 py-2.5 rounded-xl text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black shadow-lg shadow-cyan-500/20 transition active:scale-95 font-mono">
+          Connect MetaMask →
+        </button>
+      </div>
+    </header>
+
+    <!-- Pre-Flight Verification Checklist Card -->
+    <section class="p-5 rounded-2xl bg-[#0a0f1d] border border-slate-800 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xs font-bold text-slate-300 uppercase font-mono tracking-wider">
+          Pre-Flight Condition Verification (Requirement 2 & 5)
+        </h2>
+        <span id="badgePreflight" class="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400">
+          WAITING FOR WALLET
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono">
+        <div class="p-3 rounded-xl bg-slate-900 border border-slate-800">
+          <span class="text-slate-500 block text-[10px]">NETWORK & CHAIN ID</span>
+          <span id="pfNetwork" class="text-white font-semibold">Checking...</span>
+        </div>
+        <div class="p-3 rounded-xl bg-slate-900 border border-slate-800">
+          <span class="text-slate-500 block text-[10px]">TESTNET BALANCE</span>
+          <span id="pfBalance" class="text-white font-semibold">-- PHRS</span>
+        </div>
+        <div class="p-3 rounded-xl bg-slate-900 border border-slate-800">
+          <span class="text-slate-500 block text-[10px]">BYTECODE INTEGRITY (SHA-256)</span>
+          <span id="pfBytecode" class="text-slate-400 font-semibold">Pending check...</span>
+        </div>
+        <div class="p-3 rounded-xl bg-slate-900 border border-slate-800">
+          <span class="text-slate-500 block text-[10px]">CUMULATIVE GAS BUDGET</span>
+          <span id="pfBudget" class="text-purple-300 font-semibold">Max 6.88M gas (~0.0700 PHRS Cap)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 Sequential Deployment Steps -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold text-white uppercase font-mono tracking-wider">
+          Sequential Deployment Pipeline (4 Contracts)
+        </h2>
+        <span class="text-xs font-mono text-slate-400">Pause for MetaMask approval on each</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        <!-- Contract 1: TestToken A (TKA) -->
+        <div id="cardDeployTKA" class="p-5 rounded-2xl bg-[#0f172a] border border-slate-800 space-y-4 flex flex-col justify-between">
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-xs font-mono">
+              <span class="text-cyan-400 font-bold">DEPLOYMENT 01 / 04</span>
+              <span id="badgeTKA" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">READY</span>
+            </div>
+            <h3 class="text-base font-bold text-white">TestToken A (`TKA`)</h3>
+            <p class="text-xs text-slate-400">
+              Test ERC-20 token serving as the saga input asset. Mints 1,000,000 TKA initial supply to deployer.
+            </p>
+            <div class="text-[11px] font-mono text-slate-400 space-y-1 pt-2 border-t border-slate-800">
+              <div>Constructor: <code class="text-cyan-300">("Test Token A", "TKA", 1,000,000 * 10^18)</code></div>
+              <div>Est. Gas Limit: <span class="text-slate-300">1,515,000 gas</span></div>
+              <div>Est. Max Fee: <span class="text-slate-300">~0.0152 PHRS</span></div>
+              <div id="infoAddrTKA" class="text-[10px] text-emerald-400 truncate pt-1"></div>
+            </div>
+          </div>
+          <button id="btnDeployTKA" onclick="startDeployment(1)" disabled class="w-full py-2.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-500 cursor-not-allowed transition font-mono">
+            Deploy Token A (TKA)
+          </button>
+        </div>
+
+        <!-- Contract 2: TestToken B (TKB) -->
+        <div id="cardDeployTKB" class="p-5 rounded-2xl bg-[#0f172a] border border-slate-800 space-y-4 flex flex-col justify-between opacity-60">
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-xs font-mono">
+              <span class="text-cyan-400 font-bold">DEPLOYMENT 02 / 04</span>
+              <span id="badgeTKB" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">WAITING</span>
+            </div>
+            <h3 class="text-base font-bold text-white">TestToken B (`TKB`)</h3>
+            <p class="text-xs text-slate-400">
+              Test ERC-20 token serving as the swap output asset and vault deposit asset.
+            </p>
+            <div class="text-[11px] font-mono text-slate-400 space-y-1 pt-2 border-t border-slate-800">
+              <div>Constructor: <code class="text-cyan-300">("Test Token B", "TKB", 1,000,000 * 10^18)</code></div>
+              <div>Est. Gas Limit: <span class="text-slate-300">1,515,000 gas</span></div>
+              <div>Est. Max Fee: <span class="text-slate-300">~0.0152 PHRS</span></div>
+              <div id="infoAddrTKB" class="text-[10px] text-emerald-400 truncate pt-1"></div>
+            </div>
+          </div>
+          <button id="btnDeployTKB" onclick="startDeployment(2)" disabled class="w-full py-2.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-500 cursor-not-allowed transition font-mono">
+            Deploy Token B (TKB)
+          </button>
+        </div>
+
+        <!-- Contract 3: TestAMM -->
+        <div id="cardDeployAMM" class="p-5 rounded-2xl bg-[#0f172a] border border-slate-800 space-y-4 flex flex-col justify-between opacity-60">
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-xs font-mono">
+              <span class="text-cyan-400 font-bold">DEPLOYMENT 03 / 04</span>
+              <span id="badgeAMM" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">WAITING</span>
+            </div>
+            <h3 class="text-base font-bold text-white">TestAMM Router (`TestAMM`)</h3>
+            <p class="text-xs text-slate-400">
+              Deterministic 1:1 test token swap router with isolated <code class="text-cyan-300">sagaId</code> compensation tracking.
+            </p>
+            <div class="text-[11px] font-mono text-slate-400 space-y-1 pt-2 border-t border-slate-800">
+              <div>Constructor: <code class="text-cyan-300">(address tokenA, address tokenB)</code></div>
+              <div>Est. Gas Limit: <span class="text-slate-300">2,830,000 gas</span></div>
+              <div>Est. Max Fee: <span class="text-slate-300">~0.0283 PHRS</span></div>
+              <div id="infoAddrAMM" class="text-[10px] text-emerald-400 truncate pt-1"></div>
+            </div>
+          </div>
+          <button id="btnDeployAMM" onclick="startDeployment(3)" disabled class="w-full py-2.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-500 cursor-not-allowed transition font-mono">
+            Deploy TestAMM
+          </button>
+        </div>
+
+        <!-- Contract 4: TestSagaVault -->
+        <div id="cardDeployVault" class="p-5 rounded-2xl bg-[#0f172a] border border-slate-800 space-y-4 flex flex-col justify-between opacity-60">
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-xs font-mono">
+              <span class="text-cyan-400 font-bold">DEPLOYMENT 04 / 04</span>
+              <span id="badgeVault" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">WAITING</span>
+            </div>
+            <h3 class="text-base font-bold text-white">TestSagaVault (`TestSagaVault`)</h3>
+            <p class="text-xs text-slate-400">
+              Downstream vault holding Token B with ephemeral <code class="text-purple-300">depositWithFailFlag</code> for deliberate revert testing.
+            </p>
+            <div class="text-[11px] font-mono text-slate-400 space-y-1 pt-2 border-t border-slate-800">
+              <div>Constructor: <code class="text-cyan-300">(address asset = TKB)</code></div>
+              <div>Est. Gas Limit: <span class="text-slate-300">1,020,000 gas</span></div>
+              <div>Est. Max Fee: <span class="text-slate-300">~0.0102 PHRS</span></div>
+              <div id="infoAddrVault" class="text-[10px] text-emerald-400 truncate pt-1"></div>
+            </div>
+          </div>
+          <button id="btnDeployVault" onclick="startDeployment(4)" disabled class="w-full py-2.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-500 cursor-not-allowed transition font-mono">
+            Deploy TestSagaVault
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Phase 1 Final Results Table (Shown when all 4 deployed) -->
+    <section id="sectionPhase1Results" class="hidden p-5 rounded-2xl bg-emerald-950/20 border border-emerald-500/50 space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+          <h3 class="text-sm font-bold text-white font-mono uppercase tracking-wider">
+            Phase 1 Deployment Complete · Verified On-Chain
+          </h3>
+        </div>
+        <span class="text-[10px] font-mono px-2.5 py-1 rounded bg-emerald-900 text-emerald-300">
+          HARD STOP ENFORCED
+        </span>
+      </div>
+      <p class="text-xs text-emerald-200/80 leading-relaxed">
+        All 4 contracts deployed successfully to Pharos Atlantic. As instructed, execution is paused for review. No liquidity has been seeded, no sagas have run, and no submissions have been altered.
+      </p>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs font-mono">
+          <thead>
+            <tr class="border-b border-emerald-500/30 text-emerald-400">
+              <th class="pb-2">Contract</th>
+              <th class="pb-2">Deployed Address</th>
+              <th class="pb-2">Tx Hash</th>
+              <th class="pb-2">Block</th>
+              <th class="pb-2">Gas Used</th>
+              <th class="pb-2">Actual Fee (PHRS)</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyPhase1Results" class="divide-y divide-emerald-900/40 text-slate-300"></tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <a href="index.html" class="px-5 py-2.5 rounded-xl text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black shadow transition font-mono">
+          Return to Saga Dashboard (Addresses Pre-filled) →
+        </a>
+      </div>
+    </section>
+
+    <!-- Pre-Deployment Disclosure Modal -->
+    <div id="modalDeployDisclosure" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="rounded-2xl max-w-lg w-full p-6 bg-[#0f172a] border border-cyan-500/50 shadow-2xl space-y-4 font-mono text-xs">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+          <h3 class="font-bold text-white uppercase tracking-wider">Deployment Disclosure (Requirement 3 & 5)</h3>
+          <button onclick="closeDeployModal()" class="text-slate-500 hover:text-white">✕</button>
+        </div>
+        <div class="space-y-2">
+          <div class="flex justify-between p-2 rounded bg-slate-900">
+            <span class="text-slate-400">Target Network:</span>
+            <span class="text-emerald-400 font-bold">Pharos Atlantic (Chain ID 688689)</span>
+          </div>
+          <div class="flex justify-between p-2 rounded bg-slate-900">
+            <span class="text-slate-400">Approved Deployer:</span>
+            <span id="mdDeployerAccount" class="text-cyan-300 font-bold truncate max-w-[280px]">--</span>
+          </div>
+          <div class="p-2 rounded bg-slate-900 space-y-1">
+            <div class="flex justify-between">
+              <span class="text-slate-400">Contract Target:</span>
+              <span id="mdContractName" class="text-white font-semibold">--</span>
+            </div>
+            <div class="text-[10px] text-slate-400">Constructor Parameters:</div>
+            <pre id="mdConstructorArgs" class="text-[10px] text-cyan-300 bg-black/40 p-1.5 rounded overflow-x-auto"></pre>
+          </div>
+          <div class="flex justify-between p-2 rounded bg-slate-900">
+            <span class="text-slate-400">Bytecode SHA-256:</span>
+            <span id="mdBytecodeHash" class="text-emerald-400 font-bold truncate max-w-[280px]">--</span>
+          </div>
+          <div class="flex justify-between p-2 rounded bg-slate-900">
+            <span class="text-slate-400">Pinned Gas Limit / Sim Gas:</span>
+            <span id="mdGasLimit" class="text-purple-300 font-bold">--</span>
+          </div>
+          <div class="flex justify-between p-2 rounded bg-slate-900">
+            <span class="text-slate-400">Live Base Fee & Max Step Fee:</span>
+            <span id="mdEstFee" class="text-slate-300 font-bold">--</span>
+          </div>
+          <div class="flex justify-between p-2 rounded bg-slate-900">
+            <span class="text-slate-400">Prior Cumulative Spent:</span>
+            <span id="mdCumulativeSpent" class="text-emerald-400 font-bold">0.0000 PHRS</span>
+          </div>
+          <div class="flex justify-between p-2 rounded bg-slate-900 border border-slate-700">
+            <span class="text-slate-400">Projected Cumulative / Ceiling:</span>
+            <span id="mdProjectedTotal" class="text-emerald-300 font-bold">-- / 0.0700 PHRS</span>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button onclick="closeDeployModal()" class="px-3 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300">Cancel</button>
+          <button id="btnConfirmDeploy" onclick="proceedWithDeployTx()" class="px-4 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black">
+            Confirm & Prompt MetaMask →
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Log Console -->
+    <section class="p-4 rounded-xl bg-black/60 border border-slate-800 space-y-2">
+      <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider font-semibold">Deployment Execution Log</div>
+      <div id="deployLog" class="h-36 overflow-y-auto font-mono text-xs text-slate-400 space-y-1">
+        <div class="text-slate-600">[System] Initialized. Please connect MetaMask to begin Phase 1 deployment.</div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    const ATLANTIC_CHAIN_ID_INT = 688689;
+    const ATLANTIC_CHAIN_ID_HEX = '0xa8231';
+    const ATLANTIC_RPC = 'https://atlantic.dplabs-internal.com';
+    const APPROVED_DEPLOYER_ACCOUNT = '0xe4220c4b71877bb94eb173f467ef5c5557017085'.toLowerCase();
+
+    // Independently reviewed and approved bytecode SHA-256 hashes
+    const EXPECTED_BYTECODE_SHA256 = {
+      'TestToken': '497ab5f77653dfbecf18a44069e027ac2e8e3084f0ffde83d2f460b6f8a2b909',
+      'TestAMM': 'b88581b46746f692f5224b8656a6d66f579bce7578306765ef27d7bba08aa1d9',
+      'TestSagaVault': '36c6920fb7121165541755422842d65379ccd3cf6a08776373717848a9afd1f7'
+    };
+
+    // Approved per-contract transaction gas limits (Phase 1 Option A verified on Atlantic)
+    const APPROVED_GAS_LIMITS = {
+      1: 1515000n, // TKA (Atlantic est: 1,441,494)
+      2: 1515000n, // TKB (Atlantic est: 1,441,494)
+      3: 2830000n, // TestAMM (Atlantic est: 2,691,772)
+      4: 1020000n  // TestSagaVault (Atlantic est: 971,168)
+    };
+
+    // Hard cumulative fee ceiling: 0.0700 PHRS (7.0e16 wei)
+    const HARD_CUMULATIVE_FEE_CEILING_WEI = 70000000000000000n;
+
+    let currentAccount = null;
+    let artifacts = null;
+    let pendingDeployIndex = null;
+    let pendingDeployPayload = null;
+    let cumulativeFeeWei = 0n;
+    let listenersRegistered = false;
+
+    // Deployed addresses storage
+    const deployed = {
+      tka: null,
+      tkb: null,
+      amm: null,
+      vault: null
+    };
+
+    const results = [];
+
+    // Pre-computed constructor hex for TestToken (verified: name, symbol, initialSupply = 1M * 10^18)
+    const TKA_ARGS_HEX = '000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000d3c21bcecceda1000000000000000000000000000000000000000000000000000000000000000000000c5465737420546f6b656e204100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003544b410000000000000000000000000000000000000000000000000000000000';
+    const TKB_ARGS_HEX = '000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000d3c21bcecceda1000000000000000000000000000000000000000000000000000000000000000000000c5465737420546f6b656e204200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003544b420000000000000000000000000000000000000000000000000000000000';
+
+    function log(msg, type = 'info') {
+      const el = document.getElementById('deployLog');
+      const row = document.createElement('div');
+      const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      let col = 'text-slate-400';
+      if (type === 'success') col = 'text-emerald-400 font-semibold';
+      if (type === 'warn') col = 'text-amber-400';
+      if (type === 'error') col = 'text-rose-400 font-bold';
+      row.className = col;
+      row.innerHTML = `<span class="text-slate-600">[${time}]</span> ${msg}`;
+      el.appendChild(row);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function padAddress(addr) {
+      if (!addr || !/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+        throw new Error(`Invalid address for ABI padding: ${addr}`);
+      }
+      return addr.toLowerCase().replace('0x', '').padStart(64, '0');
+    }
+
+    function formatEther(weiBigInt) {
+      const isNeg = weiBigInt < 0n;
+      const v = isNeg ? -weiBigInt : weiBigInt;
+      const s = v.toString().padStart(19, '0');
+      const whole = s.slice(0, -18) || '0';
+      const frac = s.slice(-18).slice(0, 4);
+      return `${isNeg ? '-' : ''}${whole}.${frac}`;
+    }
+
+    async function computeHexSha256(hexStr) {
+      const clean = hexStr.startsWith('0x') ? hexStr.slice(2) : hexStr;
+      const match = clean.match(/.{1,2}/g);
+      if (!match) throw new Error("Invalid hex payload for SHA-256");
+      const bytes = new Uint8Array(match.map(b => parseInt(b, 16)));
+      if (window.crypto && window.crypto.subtle) {
+        const buf = await window.crypto.subtle.digest('SHA-256', bytes);
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+      throw new Error("crypto.subtle is required for client-side bytecode integrity hashing.");
+    }
+
+    async function rpcCall(method, params = []) {
+      const res = await fetch(ATLANTIC_RPC, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+      return data.result;
+    }
+
+    async function verifyNetworkAndChain() {
+      if (!window.ethereum) throw new Error("MetaMask is required.");
+      const walletChain = await window.ethereum.request({ method: 'eth_chainId' });
+      if (walletChain !== ATLANTIC_CHAIN_ID_HEX && parseInt(walletChain, 16) !== ATLANTIC_CHAIN_ID_INT) {
+        throw new Error(`Wallet chain (${walletChain}) mismatch. Must be Pharos Atlantic (688689 / 0xa8231).`);
+      }
+      const rpcChain = await rpcCall('eth_chainId');
+      if (rpcChain !== ATLANTIC_CHAIN_ID_HEX && parseInt(rpcChain, 16) !== ATLANTIC_CHAIN_ID_INT) {
+        throw new Error(`RPC chain (${rpcChain}) mismatch with Atlantic testnet.`);
+      }
+    }
+
+    async function verifyDeployerAccount() {
+      if (!window.ethereum) throw new Error("MetaMask is required.");
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+      if (!accounts || !accounts.length) {
+        throw new Error("No connected account in MetaMask. Please connect.");
+      }
+      const active = accounts[0].toLowerCase();
+      if (active !== APPROVED_DEPLOYER_ACCOUNT) {
+        throw new Error(`Connected account (${active}) is unauthorized. Must match approved deployer ${APPROVED_DEPLOYER_ACCOUNT}.`);
+      }
+      currentAccount = accounts[0];
+      return currentAccount;
+    }
+
+    async function connectWallet() {
+      try {
+        await verifyNetworkAndChain();
+
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        if (!accounts || !accounts.length) throw new Error("User denied account connection.");
+
+        currentAccount = accounts[0];
+        if (currentAccount.toLowerCase() !== APPROVED_DEPLOYER_ACCOUNT) {
+          throw new Error(`Unauthorized deployer account: ${currentAccount}. Must connect approved deployer: ${APPROVED_DEPLOYER_ACCOUNT}`);
+        }
+
+        document.getElementById('walletAddressDisplay').innerText = `${currentAccount.substring(0, 6)}...${currentAccount.substring(38)}`;
+        document.getElementById('walletInfoBox').classList.remove('hidden');
+        document.getElementById('btnConnectWallet').classList.add('hidden');
+
+        // Check Balance
+        const balHex = await rpcCall('eth_getBalance', [currentAccount, 'latest']);
+        const balWei = BigInt(balHex || '0x0');
+        const balPhrs = formatEther(balWei);
+        document.getElementById('pfBalance').innerText = `${balPhrs} PHRS`;
+        document.getElementById('pfNetwork').innerText = `Atlantic (688689)`;
+
+        if (balWei < 100000000000000000n) {
+          document.getElementById('pfBalance').className = 'text-rose-400 font-bold';
+          throw new Error(`Insufficient testnet balance: ${balPhrs} PHRS. Phase 1 requires >= 0.10 PHRS for deployment gas budget.`);
+        }
+
+        // Load & Verify compiled contract artifacts against independent SHA-256 hashes
+        log('Loading compiled contract bytecode from assets and verifying SHA-256 hashes...', 'info');
+        const artRes = await fetch('/api/contracts');
+        if (!artRes.ok) throw new Error("Could not load compiled contracts artifact.");
+        artifacts = await artRes.json();
+
+        for (const [cName, expHash] of Object.entries(EXPECTED_BYTECODE_SHA256)) {
+          if (!artifacts[cName] || !artifacts[cName].bytecode) {
+            throw new Error(`Missing compiled artifact for ${cName}`);
+          }
+          const calcHash = await computeHexSha256(artifacts[cName].bytecode);
+          if (calcHash !== expHash) {
+            throw new Error(`Bytecode integrity failure for ${cName}: expected ${expHash}, computed ${calcHash}`);
+          }
+        }
+
+        document.getElementById('pfBytecode').innerText = 'Verified (3/3 SHA-256)';
+        document.getElementById('badgePreflight').className = 'text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-600';
+        document.getElementById('badgePreflight').innerText = 'PRE-FLIGHT PASSED';
+
+        // Attach listeners for safety
+        if (!listenersRegistered && window.ethereum) {
+          window.ethereum.on('accountsChanged', (accs) => {
+            if (!accs.length || accs[0].toLowerCase() !== APPROVED_DEPLOYER_ACCOUNT) {
+              log('MetaMask account changed or unauthorized. Halting.', 'error');
+              disconnectWallet();
+            }
+          });
+          window.ethereum.on('chainChanged', (chain) => {
+            if (chain !== ATLANTIC_CHAIN_ID_HEX && parseInt(chain, 16) !== ATLANTIC_CHAIN_ID_INT) {
+              log('MetaMask network changed away from Atlantic (688689). Halting.', 'error');
+              disconnectWallet();
+            }
+          });
+          listenersRegistered = true;
+        }
+
+        log(`Pre-flight checks passed! Account ${currentAccount} verified.`, 'success');
+
+        // Check if previously deployed contracts exist in localStorage and verify on Atlantic
+        await restorePreviouslyDeployedState();
+
+        // Check for any pending unresolved deployment transaction
+        const isPending = await checkPendingDeploymentStatus();
+
+        if (!isPending && !deployed.tka) {
+          // Enable Card 1 only if step 1 is not deployed and no pending lock
+          document.getElementById('btnDeployTKA').disabled = false;
+          document.getElementById('btnDeployTKA').className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black shadow transition font-mono';
+        }
+      } catch (err) {
+        log(`Connection failed: ${err.message}`, 'error');
+      }
+    }
+
+    function disconnectWallet() {
+      currentAccount = null;
+      document.getElementById('walletInfoBox').classList.add('hidden');
+      document.getElementById('btnConnectWallet').classList.remove('hidden');
+      document.getElementById('btnDeployTKA').disabled = true;
+      document.getElementById('btnDeployTKA').className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-500 cursor-not-allowed transition font-mono';
+      log('Wallet disconnected.', 'info');
+    }
+
+    async function startDeployment(idx) {
+      try {
+        // Enforce sequence: cannot skip previous contracts
+        if (idx === 2 && !deployed.tka) throw new Error("Deployment sequence violation: TKA must be deployed first.");
+        if (idx === 3 && (!deployed.tka || !deployed.tkb)) throw new Error("Deployment sequence violation: TKA and TKB must be deployed first.");
+        if (idx === 4 && !deployed.tkb) throw new Error("Deployment sequence violation: TKB must be deployed first.");
+
+        // Guard against initiating deployment when an unresolved transaction is in flight
+        const pendingRaw = localStorage.getItem('pharos_pending_deployment');
+        if (pendingRaw) {
+          let p;
+          try { p = JSON.parse(pendingRaw); } catch {}
+          if (p && p.txHash) {
+            throw new Error(`Cannot start new deployment: Transaction ${p.txHash} for Step ${p.idx} (${p.contractName}) is currently pending or unresolved. Resolve its status before initiating a new deployment.`);
+          }
+        }
+
+        // Fresh pre-transaction verification (Requirement 5)
+        await verifyNetworkAndChain();
+        await verifyDeployerAccount();
+
+        // Fresh balance & live gas price check
+        const balHex = await rpcCall('eth_getBalance', [currentAccount, 'latest']);
+        const balWei = BigInt(balHex || '0x0');
+        const gpHex = await rpcCall('eth_gasPrice');
+        const currentGasPriceWei = BigInt(gpHex || '0x2540be400');
+        const gpGwei = (Number(currentGasPriceWei) / 1e9).toFixed(2);
+
+        let name, argsText, deployData, expShaKey;
+        let expectedDeps = {};
+        const approvedLimit = APPROVED_GAS_LIMITS[idx];
+
+        if (idx === 1) {
+          name = "TestToken A (TKA)";
+          argsText = 'name: "Test Token A", symbol: "TKA", initialSupply: 1,000,000 * 10^18';
+          if (TKA_ARGS_HEX.length !== 448 || !TKA_ARGS_HEX.includes('5465737420546f6b656e2041')) {
+            throw new Error("Invalid TKA constructor calldata payload.");
+          }
+          deployData = artifacts['TestToken']['bytecode'] + TKA_ARGS_HEX;
+          expShaKey = 'TestToken';
+          expectedDeps = {};
+        } else if (idx === 2) {
+          name = "TestToken B (TKB)";
+          argsText = 'name: "Test Token B", symbol: "TKB", initialSupply: 1,000,000 * 10^18';
+          if (TKB_ARGS_HEX.length !== 448 || !TKB_ARGS_HEX.includes('5465737420546f6b656e2042')) {
+            throw new Error("Invalid TKB constructor calldata payload.");
+          }
+          deployData = artifacts['TestToken']['bytecode'] + TKB_ARGS_HEX;
+          expShaKey = 'TestToken';
+          expectedDeps = {};
+        } else if (idx === 3) {
+          name = "TestAMM Router";
+          if (!deployed.tka || !deployed.tkb || deployed.tka.toLowerCase() === deployed.tkb.toLowerCase()) {
+            throw new Error("Invalid AMM token addresses: TKA and TKB must be distinct, confirmed contract addresses.");
+          }
+          argsText = `tokenA: ${deployed.tka}, tokenB: ${deployed.tkb}`;
+          deployData = artifacts['TestAMM']['bytecode'] + padAddress(deployed.tka) + padAddress(deployed.tkb);
+          expShaKey = 'TestAMM';
+          expectedDeps = {
+            owner: currentAccount,
+            tokenA: deployed.tka,
+            tokenB: deployed.tkb
+          };
+        } else if (idx === 4) {
+          name = "TestSagaVault";
+          if (!deployed.tkb) {
+            throw new Error("Invalid Vault asset address: TKB must be confirmed.");
+          }
+          argsText = `asset: ${deployed.tkb}`;
+          deployData = artifacts['TestSagaVault']['bytecode'] + padAddress(deployed.tkb);
+          expShaKey = 'TestSagaVault';
+          expectedDeps = {
+            asset: deployed.tkb
+          };
+        }
+
+        // Simulate eth_estimateGas and reject if it exceeds approved gas limit (Requirement 3)
+        log(`Simulating deployment gas via eth_estimateGas for ${name}...`, 'info');
+        const estGasHex = await rpcCall('eth_estimateGas', [{
+          from: currentAccount,
+          data: deployData
+        }]);
+        const estGas = BigInt(estGasHex || '0x0');
+        if (estGas > approvedLimit) {
+          throw new Error(`Simulated gas estimate (${estGas.toLocaleString()}) exceeds approved gas limit (${approvedLimit.toLocaleString()}). Deployment halted.`);
+        }
+
+        // Calculate projected cumulative worst-case total (Requirement 4)
+        const nextStepMaxFeeWei = approvedLimit * currentGasPriceWei;
+        const projectedCumulativeWei = cumulativeFeeWei + nextStepMaxFeeWei;
+
+        if (projectedCumulativeWei > HARD_CUMULATIVE_FEE_CEILING_WEI) {
+          throw new Error(`Projected cumulative fee (${formatEther(projectedCumulativeWei)} PHRS) exceeds hard budget ceiling of 0.0700 PHRS. Halting.`);
+        }
+
+        if (balWei < nextStepMaxFeeWei) {
+          throw new Error(`Insufficient balance for next transaction max fee: ${formatEther(balWei)} PHRS < ${formatEther(nextStepMaxFeeWei)} PHRS.`);
+        }
+
+        pendingDeployIndex = idx;
+        pendingDeployPayload = {
+          idx,
+          contractName: name,
+          deployData,
+          approvedLimit,
+          estGas,
+          nextStepMaxFeeWei,
+          projectedCumulativeWei,
+          currentGasPriceWei,
+          expShaKey,
+          expectedDeps
+        };
+
+        // Populate Disclosure Modal (Requirement 3 & 5)
+        document.getElementById('mdContractName').innerText = name;
+        document.getElementById('mdDeployerAccount').innerText = currentAccount;
+        document.getElementById('mdConstructorArgs').innerText = argsText;
+        document.getElementById('mdBytecodeHash').innerText = `${EXPECTED_BYTECODE_SHA256[expShaKey].substring(0, 16)}... (Verified Match)`;
+        document.getElementById('mdGasLimit').innerText = `${approvedLimit.toLocaleString()} gas (Simulated: ${estGas.toLocaleString()})`;
+        document.getElementById('mdEstFee').innerText = `${gpGwei} Gwei | Max: ~${formatEther(nextStepMaxFeeWei)} PHRS`;
+        document.getElementById('mdCumulativeSpent').innerText = `${formatEther(cumulativeFeeWei)} PHRS`;
+        document.getElementById('mdProjectedTotal').innerText = `${formatEther(projectedCumulativeWei)} / 0.0700 PHRS (Within Cap)`;
+
+        document.getElementById('modalDeployDisclosure').classList.remove('hidden');
+      } catch (err) {
+        log(`Deployment check failed: ${err.message}`, 'error');
+      }
+    }
+
+    function closeDeployModal() {
+      document.getElementById('modalDeployDisclosure').classList.add('hidden');
+      pendingDeployIndex = null;
+      pendingDeployPayload = null;
+    }
+
+    function getButtonIdForStep(idx) {
+      if (idx === 1) return 'btnDeployTKA';
+      if (idx === 2) return 'btnDeployTKB';
+      if (idx === 3) return 'btnDeployAMM';
+      if (idx === 4) return 'btnDeployVault';
+      return null;
+    }
+
+    function getBadgeIdForStep(idx) {
+      if (idx === 1) return 'badgeTKA';
+      if (idx === 2) return 'badgeTKB';
+      if (idx === 3) return 'badgeAMM';
+      if (idx === 4) return 'badgeVault';
+      return null;
+    }
+
+    function getCardNameForStep(idx) {
+      if (idx === 1) return 'Token A (TKA)';
+      if (idx === 2) return 'Token B (TKB)';
+      if (idx === 3) return 'TestAMM';
+      if (idx === 4) return 'TestSagaVault';
+      return `Step ${idx}`;
+    }
+
+    function setStepPendingLockUI(idx, txHash) {
+      const btnId = getButtonIdForStep(idx);
+      const badgeId = getBadgeIdForStep(idx);
+      if (btnId) {
+        const btn = document.getElementById(btnId);
+        btn.disabled = true;
+        btn.onclick = null;
+        btn.className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-amber-950 text-amber-300 border border-amber-600 font-mono cursor-not-allowed';
+        btn.innerText = `Pending on Atlantic (${txHash.substring(0, 10)}...)`;
+      }
+      if (badgeId) {
+        const badge = document.getElementById(badgeId);
+        badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-600';
+        badge.innerText = 'PENDING';
+      }
+    }
+
+    function setStepPendingRecheckUI(idx, txHash) {
+      const btnId = getButtonIdForStep(idx);
+      const badgeId = getBadgeIdForStep(idx);
+      if (btnId) {
+        const btn = document.getElementById(btnId);
+        btn.disabled = false;
+        btn.onclick = () => recheckPendingDeployment(idx);
+        btn.className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white font-mono shadow transition cursor-pointer';
+        btn.innerText = `Re-check Pending Receipt (${txHash.substring(0, 10)}...)`;
+      }
+      if (badgeId) {
+        const badge = document.getElementById(badgeId);
+        badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-600';
+        badge.innerText = 'UNRESOLVED';
+      }
+    }
+
+    function resetStepButtonUI(idx) {
+      const btnId = getButtonIdForStep(idx);
+      const badgeId = getBadgeIdForStep(idx);
+      if (btnId) {
+        const btn = document.getElementById(btnId);
+        btn.disabled = false;
+        btn.onclick = () => startDeployment(idx);
+        btn.className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black shadow transition font-mono';
+        btn.innerText = `Deploy ${getCardNameForStep(idx)}`;
+      }
+      if (badgeId) {
+        const badge = document.getElementById(badgeId);
+        badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300';
+        badge.innerText = 'READY';
+      }
+    }
+
+    async function verifyDeployedRuntimeCode(contractKey, deployedAddress, expectedDeps = {}) {
+      log(`Verifying on-chain runtime bytecode for ${contractKey} at ${deployedAddress}...`, 'info');
+      const code = await rpcCall('eth_getCode', [deployedAddress, 'latest']);
+      if (!code || code === '0x' || code === '0x0' || code.length <= 10) {
+        throw new Error(`Deployment anomaly: Contract address ${deployedAddress} contains empty runtime bytecode.`);
+      }
+
+      const expectedRuntime = artifacts[contractKey] && artifacts[contractKey].runtime_bytecode;
+      if (!expectedRuntime) {
+        throw new Error(`Missing expected runtime bytecode artifact for ${contractKey}`);
+      }
+
+      const cleanDeployed = code.toLowerCase().trim();
+      const cleanExpected = expectedRuntime.toLowerCase().trim();
+
+      // 1. Bit-for-bit check for contracts without immutables (TestToken)
+      if (contractKey === 'TestToken') {
+        if (cleanDeployed !== cleanExpected) {
+          throw new Error(`Runtime bytecode mismatch for ${contractKey} at ${deployedAddress}. Expected len ${cleanExpected.length}, got ${cleanDeployed.length}.`);
+        }
+        log(`Runtime bytecode verified bit-for-bit for ${contractKey} (${(cleanDeployed.length - 2) / 2} bytes).`, 'success');
+        return true;
+      }
+
+      // 2. Length check for contracts with immutables (TestAMM, TestSagaVault)
+      if (cleanDeployed.length !== cleanExpected.length) {
+        throw new Error(`Runtime code length mismatch for ${contractKey}: expected ${cleanExpected.length} hex chars, got ${cleanDeployed.length}`);
+      }
+
+      // 3. Preamble/dispatch table check (first 400 hex characters after 0x = 402 chars total)
+      const preambleLen = 402;
+      if (cleanDeployed.slice(0, preambleLen) !== cleanExpected.slice(0, preambleLen)) {
+        throw new Error(`Runtime code preamble/dispatch table mismatch for ${contractKey}`);
+      }
+
+      // 4. Immutables verification
+      if (contractKey === 'TestAMM') {
+        const { owner, tokenA, tokenB } = expectedDeps;
+        if (!owner || !tokenA || !tokenB) {
+          throw new Error("Missing expected dependency addresses for TestAMM runtime verification");
+        }
+        const cleanOwner = owner.toLowerCase().replace('0x', '');
+        const cleanTokenA = tokenA.toLowerCase().replace('0x', '');
+        const cleanTokenB = tokenB.toLowerCase().replace('0x', '');
+
+        if (!cleanDeployed.includes(cleanOwner)) {
+          throw new Error(`TestAMM runtime code missing embedded owner immutable address: ${owner}`);
+        }
+        if (!cleanDeployed.includes(cleanTokenA)) {
+          throw new Error(`TestAMM runtime code missing embedded tokenA immutable address: ${tokenA}`);
+        }
+        if (!cleanDeployed.includes(cleanTokenB)) {
+          throw new Error(`TestAMM runtime code missing embedded tokenB immutable address: ${tokenB}`);
+        }
+        log(`Runtime bytecode verified for TestAMM: length (${(cleanDeployed.length - 2) / 2} bytes), preamble (400 hex chars), and immutables (owner, tokenA, tokenB).`, 'success');
+        return true;
+      }
+
+      if (contractKey === 'TestSagaVault') {
+        const { asset } = expectedDeps;
+        if (!asset) {
+          throw new Error("Missing expected asset dependency address for TestSagaVault runtime verification");
+        }
+        const cleanAsset = asset.toLowerCase().replace('0x', '');
+        if (!cleanDeployed.includes(cleanAsset)) {
+          throw new Error(`TestSagaVault runtime code missing embedded asset immutable address: ${asset}`);
+        }
+        log(`Runtime bytecode verified for TestSagaVault: length (${(cleanDeployed.length - 2) / 2} bytes), preamble (400 hex chars), and immutable asset address.`, 'success');
+        return true;
+      }
+
+      throw new Error(`Unsupported contract for runtime verification: ${contractKey}`);
+    }
+
+    function applyDeployedContract(idx, contractAddress) {
+      if (idx === 1) {
+        deployed.tka = contractAddress;
+        document.getElementById('badgeTKA').className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-600';
+        document.getElementById('badgeTKA').innerText = 'DEPLOYED';
+        document.getElementById('infoAddrTKA').innerText = contractAddress;
+        document.getElementById('btnDeployTKA').disabled = true;
+        document.getElementById('btnDeployTKA').className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-600 font-mono';
+
+        // Unlock Card 2
+        document.getElementById('cardDeployTKB').classList.remove('opacity-60');
+        document.getElementById('badgeTKB').className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300';
+        document.getElementById('badgeTKB').innerText = 'READY';
+        document.getElementById('btnDeployTKB').disabled = false;
+        document.getElementById('btnDeployTKB').className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black shadow transition font-mono';
+      } else if (idx === 2) {
+        deployed.tkb = contractAddress;
+        document.getElementById('badgeTKB').className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-600';
+        document.getElementById('badgeTKB').innerText = 'DEPLOYED';
+        document.getElementById('infoAddrTKB').innerText = contractAddress;
+        document.getElementById('btnDeployTKB').disabled = true;
+        document.getElementById('btnDeployTKB').className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-600 font-mono';
+
+        // Unlock Card 3
+        document.getElementById('cardDeployAMM').classList.remove('opacity-60');
+        document.getElementById('badgeAMM').className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300';
+        document.getElementById('badgeAMM').innerText = 'READY';
+        document.getElementById('btnDeployAMM').disabled = false;
+        document.getElementById('btnDeployAMM').className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black shadow transition font-mono';
+      } else if (idx === 3) {
+        deployed.amm = contractAddress;
+        document.getElementById('badgeAMM').className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-600';
+        document.getElementById('badgeAMM').innerText = 'DEPLOYED';
+        document.getElementById('infoAddrAMM').innerText = contractAddress;
+        document.getElementById('btnDeployAMM').disabled = true;
+        document.getElementById('btnDeployAMM').className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-600 font-mono';
+
+        // Unlock Card 4
+        document.getElementById('cardDeployVault').classList.remove('opacity-60');
+        document.getElementById('badgeVault').className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300';
+        document.getElementById('badgeVault').innerText = 'READY';
+        document.getElementById('btnDeployVault').disabled = false;
+        document.getElementById('btnDeployVault').className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-black shadow transition font-mono';
+      } else if (idx === 4) {
+        deployed.vault = contractAddress;
+        document.getElementById('badgeVault').className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-600';
+        document.getElementById('badgeVault').innerText = 'DEPLOYED';
+        document.getElementById('infoAddrVault').innerText = contractAddress;
+        document.getElementById('btnDeployVault').disabled = true;
+        document.getElementById('btnDeployVault').className = 'w-full py-2.5 rounded-xl text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-600 font-mono';
+
+        // Save to localStorage for index.html auto-fill
+        localStorage.setItem('pharos_saga_deployed', JSON.stringify(deployed));
+
+        renderFinalPhase1Results();
+      }
+      localStorage.setItem('pharos_saga_deployed', JSON.stringify(deployed));
+    }
+
+    async function restorePreviouslyDeployedState() {
+      const raw = localStorage.getItem('pharos_saga_deployed');
+      if (!raw) return;
+      try {
+        const saved = JSON.parse(raw);
+        if (!saved) return;
+        if (saved.tka && /^0x[0-9a-fA-F]{40}$/.test(saved.tka)) {
+          const code = await rpcCall('eth_getCode', [saved.tka, 'latest']);
+          if (code && code.length > 10) {
+            applyDeployedContract(1, saved.tka);
+            log(`Restored verified deployment for TKA: ${saved.tka}`, 'info');
+          }
+        }
+        if (saved.tkb && /^0x[0-9a-fA-F]{40}$/.test(saved.tkb)) {
+          const code = await rpcCall('eth_getCode', [saved.tkb, 'latest']);
+          if (code && code.length > 10) {
+            applyDeployedContract(2, saved.tkb);
+            log(`Restored verified deployment for TKB: ${saved.tkb}`, 'info');
+          }
+        }
+        if (saved.amm && /^0x[0-9a-fA-F]{40}$/.test(saved.amm)) {
+          const code = await rpcCall('eth_getCode', [saved.amm, 'latest']);
+          if (code && code.length > 10) {
+            applyDeployedContract(3, saved.amm);
+            log(`Restored verified deployment for TestAMM: ${saved.amm}`, 'info');
+          }
+        }
+        if (saved.vault && /^0x[0-9a-fA-F]{40}$/.test(saved.vault)) {
+          const code = await rpcCall('eth_getCode', [saved.vault, 'latest']);
+          if (code && code.length > 10) {
+            applyDeployedContract(4, saved.vault);
+            log(`Restored verified deployment for TestSagaVault: ${saved.vault}`, 'info');
+          }
+        }
+      } catch (e) {
+        log(`Could not restore prior deployed state: ${e.message}`, 'warn');
+      }
+    }
+
+    async function checkPendingDeploymentStatus() {
+      const raw = localStorage.getItem('pharos_pending_deployment');
+      if (!raw) return false;
+      let pending;
+      try {
+        pending = JSON.parse(raw);
+      } catch {
+        localStorage.removeItem('pharos_pending_deployment');
+        return false;
+      }
+      if (!pending || !pending.txHash || !pending.idx) return false;
+
+      log(`[Pending Recovery] Detected unresolved deployment for Step ${pending.idx} (${pending.contractName}). Hash: ${pending.txHash}`, 'warn');
+      setStepPendingLockUI(pending.idx, pending.txHash);
+
+      try {
+        const receipt = await rpcCall('eth_getTransactionReceipt', [pending.txHash]);
+        if (!receipt) {
+          log(`Transaction ${pending.txHash} is still pending / unmined on Atlantic. Card locked against duplicate submission.`, 'warn');
+          log(`Check status on explorer: https://atlantic.pharosscan.xyz/tx/${pending.txHash}`, 'info');
+          setStepPendingRecheckUI(pending.idx, pending.txHash);
+          return true;
+        }
+        if (receipt.status !== '0x1') {
+          log(`Pending transaction ${pending.txHash} reverted on-chain (status: ${receipt.status}). Clearing lock so you can retry.`, 'error');
+          localStorage.removeItem('pharos_pending_deployment');
+          resetStepButtonUI(pending.idx);
+          return false;
+        }
+
+        log(`Pending transaction ${pending.txHash} confirmed on Atlantic! Verifying runtime code...`, 'success');
+        const contractAddress = receipt.contractAddress;
+        if (!contractAddress) throw new Error("Receipt missing contractAddress.");
+
+        await verifyDeployedRuntimeCode(pending.contractKey, contractAddress, pending.expectedDeps || {});
+
+        const gasUsed = parseInt(receipt.gasUsed, 16);
+        const effectiveGasPrice = parseInt(receipt.effectiveGasPrice || receipt.gasPrice || '0x2540be400', 16);
+        const blockNumber = parseInt(receipt.blockNumber, 16);
+        const feeWei = BigInt(gasUsed) * BigInt(effectiveGasPrice);
+        cumulativeFeeWei += feeWei;
+
+        results.push({
+          name: pending.contractName,
+          address: contractAddress,
+          txHash: pending.txHash,
+          block: blockNumber,
+          gasUsed,
+          feePhrs: formatEther(feeWei)
+        });
+
+        localStorage.removeItem('pharos_pending_deployment');
+        applyDeployedContract(pending.idx, contractAddress);
+        log(`[RECOVERED] ${pending.contractName} deployed at: ${contractAddress}`, 'success');
+        return true;
+      } catch (err) {
+        log(`Failed to resolve pending transaction: ${err.message}. Card remains locked to prevent duplicate submission.`, 'error');
+        setStepPendingRecheckUI(pending.idx, pending.txHash);
+        return true;
+      }
+    }
+
+    async function recheckPendingDeployment(idx) {
+      const raw = localStorage.getItem('pharos_pending_deployment');
+      if (!raw) {
+        log('No pending transaction recorded. Unlocking card.', 'info');
+        resetStepButtonUI(idx);
+        return;
+      }
+      let pending;
+      try {
+        pending = JSON.parse(raw);
+      } catch {
+        localStorage.removeItem('pharos_pending_deployment');
+        resetStepButtonUI(idx);
+        return;
+      }
+
+      log(`Re-checking receipt on Atlantic for ${pending.contractName} (${pending.txHash})...`, 'info');
+      try {
+        await verifyNetworkAndChain();
+        const receipt = await rpcCall('eth_getTransactionReceipt', [pending.txHash]);
+        if (!receipt) {
+          log(`Transaction ${pending.txHash} is still pending / unmined on Atlantic.`, 'warn');
+          log(`Explorer: https://atlantic.pharosscan.xyz/tx/${pending.txHash}`, 'info');
+          return;
+        }
+        if (receipt.status !== '0x1') {
+          log(`Transaction ${pending.txHash} reverted on-chain (status: ${receipt.status}). Clearing lock so you can retry.`, 'error');
+          localStorage.removeItem('pharos_pending_deployment');
+          resetStepButtonUI(idx);
+          return;
+        }
+
+        log(`Confirmed! Transaction ${pending.txHash} mined successfully in block #${parseInt(receipt.blockNumber, 16)}.`, 'success');
+        const contractAddress = receipt.contractAddress;
+        if (!contractAddress) throw new Error("Receipt missing contractAddress.");
+
+        await verifyDeployedRuntimeCode(pending.contractKey, contractAddress, pending.expectedDeps || {});
+
+        const gasUsed = parseInt(receipt.gasUsed, 16);
+        const effectiveGasPrice = parseInt(receipt.effectiveGasPrice || receipt.gasPrice || '0x2540be400', 16);
+        const feeWei = BigInt(gasUsed) * BigInt(effectiveGasPrice);
+        cumulativeFeeWei += feeWei;
+
+        results.push({
+          name: pending.contractName,
+          address: contractAddress,
+          txHash: pending.txHash,
+          block: parseInt(receipt.blockNumber, 16),
+          gasUsed,
+          feePhrs: formatEther(feeWei)
+        });
+
+        localStorage.removeItem('pharos_pending_deployment');
+        applyDeployedContract(idx, contractAddress);
+        log(`[RECOVERED] ${pending.contractName} deployed at: ${contractAddress}`, 'success');
+      } catch (err) {
+        log(`Failed to resolve pending transaction: ${err.message}`, 'error');
+      }
+    }
+
+    async function proceedWithDeployTx() {
+      if (!pendingDeployPayload || pendingDeployPayload.idx !== pendingDeployIndex) {
+        log('No active deployment payload. Aborted.', 'error');
+        return;
+      }
+      const p = pendingDeployPayload;
+      closeDeployModal();
+
+      try {
+        // Final pre-signature verification
+        await verifyNetworkAndChain();
+        const active = await verifyDeployerAccount();
+        if (active.toLowerCase() !== APPROVED_DEPLOYER_ACCOUNT) {
+          throw new Error("Active account changed before signature. Halting.");
+        }
+
+        log(`Requesting MetaMask signature for ${p.contractName} (Pinned gas: ${p.approvedLimit.toLocaleString()})...`, 'info');
+
+        // Send deployment transaction with pinned gas limit (Requirement 3 & 6)
+        const txHash = await window.ethereum.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: currentAccount,
+            data: p.deployData,
+            gas: '0x' + p.approvedLimit.toString(16)
+          }]
+        });
+
+        log(`Deployment transaction broadcast! Hash: ${txHash}`, 'success');
+
+        // Persist pending deployment record to prevent duplicate submissions (Fix 1)
+        const pendingRecord = {
+          idx: p.idx,
+          contractName: p.contractName,
+          contractKey: p.expShaKey,
+          txHash: txHash,
+          timestamp: Date.now(),
+          deployer: currentAccount.toLowerCase(),
+          expectedDeps: p.expectedDeps || {}
+        };
+        localStorage.setItem('pharos_pending_deployment', JSON.stringify(pendingRecord));
+        setStepPendingLockUI(p.idx, txHash);
+
+        log(`Polling receipt on Atlantic Testnet...`, 'info');
+
+        const { receipt, contractAddress, gasUsed, effectiveGasPrice, blockNumber } = await pollDeploymentReceipt(txHash, p.idx);
+
+        // Verify runtime bytecode integrity and immutable variables (Fix 2)
+        await verifyDeployedRuntimeCode(p.expShaKey, contractAddress, p.expectedDeps || {});
+
+        const feeWei = BigInt(gasUsed) * BigInt(effectiveGasPrice);
+        cumulativeFeeWei += feeWei;
+
+        log(`[DEPLOYED] ${p.contractName} confirmed at: ${contractAddress}`, 'success');
+        log(`Block #${blockNumber} | Gas used: ${gasUsed.toLocaleString()} | Fee: ${formatEther(feeWei)} PHRS`, 'info');
+
+        results.push({
+          name: p.contractName,
+          address: contractAddress,
+          txHash,
+          block: blockNumber,
+          gasUsed,
+          feePhrs: formatEther(feeWei)
+        });
+
+        // Clear the pending lock now that receipt and runtime code are fully confirmed
+        localStorage.removeItem('pharos_pending_deployment');
+
+        // Update UI & Enable next
+        applyDeployedContract(p.idx, contractAddress);
+
+      } catch (err) {
+        if (err.code === 4001 || err.message.includes('User rejected')) {
+          log(`Deployment rejected by user in MetaMask. 0 gas spent. Stopped.`, 'warn');
+        } else {
+          log(`Deployment failed: ${err.message}. Stopped fail-closed.`, 'error');
+        }
+      }
+    }
+
+    async function pollDeploymentReceipt(txHash, stepIdx, maxAttempts = 35) {
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(r => setTimeout(r, 1500));
+        const receipt = await rpcCall('eth_getTransactionReceipt', [txHash]);
+        if (receipt) {
+          if (receipt.status !== '0x1') {
+            localStorage.removeItem('pharos_pending_deployment');
+            resetStepButtonUI(stepIdx);
+            throw new Error(`Deployment transaction reverted on-chain with status ${receipt.status}`);
+          }
+          const contractAddress = receipt.contractAddress;
+          if (!contractAddress) {
+            throw new Error("Receipt did not return contractAddress.");
+          }
+          const gasUsed = parseInt(receipt.gasUsed, 16);
+          const effectiveGasPrice = parseInt(receipt.effectiveGasPrice || receipt.gasPrice || '0x2540be400', 16);
+          const blockNumber = parseInt(receipt.blockNumber, 16);
+          return { receipt, contractAddress, gasUsed, effectiveGasPrice, blockNumber };
+        }
+      }
+      // On timeout: PRESERVE localStorage('pharos_pending_deployment') to prevent duplicate submission!
+      setStepPendingRecheckUI(stepIdx, txHash);
+      throw new Error(`Receipt polling timed out for tx ${txHash} after ${maxAttempts} attempts. The pending lock remains ACTIVE to prevent duplicate broadcast. Verify on explorer: https://atlantic.pharosscan.xyz/tx/${txHash}`);
+    }
+
+    function renderFinalPhase1Results() {
+      const tbody = document.getElementById('tbodyPhase1Results');
+      tbody.innerHTML = '';
+      results.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-emerald-900/30';
+        tr.innerHTML = `
+          <td class="py-2 text-white font-bold">${r.name}</td>
+          <td class="py-2 text-cyan-300"><a href="https://atlantic.pharosscan.xyz/address/${r.address}" target="_blank" class="underline">${r.address}</a></td>
+          <td class="py-2 text-slate-400"><a href="https://atlantic.pharosscan.xyz/tx/${r.txHash}" target="_blank" class="underline">${r.txHash.substring(0, 10)}...</a></td>
+          <td class="py-2 text-slate-300">#${r.block}</td>
+          <td class="py-2 text-purple-300">${r.gasUsed.toLocaleString()}</td>
+          <td class="py-2 text-emerald-300 font-bold">${r.feePhrs}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      document.getElementById('sectionPhase1Results').classList.remove('hidden');
+      log(`PHASE 1 COMPLETE. Total spent: ${formatEther(cumulativeFeeWei)} PHRS. Halting per Condition 7.`, 'success');
+    }
+  </script>
+</body>
+</html>
